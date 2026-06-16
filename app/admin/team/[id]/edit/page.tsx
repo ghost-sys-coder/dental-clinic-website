@@ -40,6 +40,7 @@ export default async function EditTeamMemberPage({
           credentials: member.credentials,
           bio: member.bio,
           photo: member.photo,
+          email: member.email,
           displayOrder: member.displayOrder,
         }}
       />
