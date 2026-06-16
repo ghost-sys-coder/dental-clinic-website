@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Plus, User, Trash2 } from "lucide-react";
+import { Plus, User, Trash2, Pencil } from "lucide-react";
 import { listTeamMembers, deleteTeamMember } from "@/app/admin/actions";
 
 export const metadata = { title: "Team — Admin" };
@@ -72,6 +72,13 @@ export default async function TeamPage() {
 
               {/* Actions */}
               <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border">
+                <Link
+                  href={`/admin/team/${member.id}/edit`}
+                  className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
+                >
+                  <Pencil className="size-3.5" />
+                  Edit
+                </Link>
                 <form
                   action={async () => {
                     "use server";

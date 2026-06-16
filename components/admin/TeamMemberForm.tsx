@@ -4,12 +4,26 @@ import { useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/utils/supabase/client";
-import { createTeamMember } from "@/app/admin/actions";
+import { createTeamMember, updateTeamMember } from "@/app/admin/actions";
 import { Loader2, X, Upload, User } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const BUCKET = "team-profile";
+
+interface InitialData {
+  id: string;
+  name: string;
+  title: string;
+  credentials: string[];
+  bio: string;
+  photo: string | null;
+  displayOrder: number;
+}
+
+interface Props {
+  initialData?: InitialData;
+}
 
 interface Fields {
   name: string;
@@ -18,16 +32,24 @@ interface Fields {
   displayOrder: string;
 }
 
-export default function TeamMemberForm() {
+export default function TeamMemberForm({ initialData }: Props) {
+  const isEdit = !!initialData;
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [fields, setFields] = useState<Fields>({ name: "", title: "", bio: "", displayOrder: "0" });
-  const [credentials, setCredentials] = useState<string[]>([]);
+  const [fields, setFields] = useState<Fields>({
+    name: initialData?.name ?? "",
+    title: initialData?.title ?? "",
+    bio: initialData?.bio ?? "",
+    displayOrder: String(initialData?.displayOrder ?? 0),
+  });
+  const [credentials, setCredentials] = useState<string[]>(initialData?.credentials ?? []);
   const [credInput, setCredInput] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Partial<Fields & { credentials: string }>>({});
+  // photoPreview: blob URL for a newly chosen file, existing URL for retained photo, null if cleared
+  const [photoPreview, setPhotoPreview] = useState<string | null>(initialData?.photo ?? null);
+  const [photoClear, setPhotoClear] = useState(false);
+  const [errors, setErrors] = useState<Partial<Fields>>({});
   const [pending, startTransition] = useTransition();
 
   function set(key: keyof Fields, value: string) {
@@ -40,6 +62,14 @@ export default function TeamMemberForm() {
     if (!file) return;
     setPhotoFile(file);
     setPhotoPreview(URL.createObjectURL(file));
+    setPhotoClear(false);
+  }
+
+  function handlePhotoClear() {
+    setPhotoFile(null);
+    setPhotoPreview(null);
+    setPhotoClear(true);
+    if (fileRef.current) fileRef.current.value = "";
   }
 
   function addCredential() {
@@ -61,7 +91,7 @@ export default function TeamMemberForm() {
   }
 
   function validate(): boolean {
-    const errs: typeof errors = {};
+    const errs: Partial<Fields> = {};
     if (!fields.name.trim()) errs.name = "Name is required";
     if (!fields.title.trim()) errs.title = "Title is required";
     if (!fields.bio.trim()) errs.bio = "Bio is required";
@@ -69,15 +99,19 @@ export default function TeamMemberForm() {
     return Object.keys(errs).length === 0;
   }
 
-  async function uploadPhoto(): Promise<string | undefined> {
-    if (!photoFile) return undefined;
-    const supabase = createClient();
-    const ext = photoFile.name.split(".").pop();
-    const path = `${fields.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}.${ext}`;
-    const { data, error } = await supabase.storage.from(BUCKET).upload(path, photoFile, { upsert: true });
-    if (error) throw new Error(`Image upload failed: ${error.message}`);
-    const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(data.path);
-    return publicUrl;
+  async function resolvePhoto(): Promise<string | null | undefined> {
+    if (photoFile) {
+      const supabase = createClient();
+      const ext = photoFile.name.split(".").pop();
+      const path = `${fields.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}.${ext}`;
+      const { data, error } = await supabase.storage.from(BUCKET).upload(path, photoFile, { upsert: true });
+      if (error) throw new Error(`Image upload failed: ${error.message}`);
+      const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(data.path);
+      return publicUrl;
+    }
+    if (photoClear) return null;
+    // No new file, not cleared — undefined signals "leave unchanged" to the action
+    return undefined;
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -86,16 +120,24 @@ export default function TeamMemberForm() {
 
     startTransition(async () => {
       try {
-        const photo = await uploadPhoto();
-        await createTeamMember({
+        const photo = await resolvePhoto();
+        const payload = {
           name: fields.name.trim(),
           title: fields.title.trim(),
           credentials,
           bio: fields.bio.trim(),
           photo,
           displayOrder: parseInt(fields.displayOrder, 10) || 0,
-        });
-        toast.success("Team member created");
+        };
+
+        if (isEdit) {
+          await updateTeamMember(initialData.id, payload);
+          toast.success("Team member updated");
+        } else {
+          await createTeamMember(payload);
+          toast.success("Team member created");
+        }
+
         router.push("/admin/team");
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Something went wrong");
@@ -112,7 +154,7 @@ export default function TeamMemberForm() {
         <div className="flex items-center gap-4">
           <div className="relative size-24 rounded-xl overflow-hidden bg-muted border border-border shrink-0 flex items-center justify-center">
             {photoPreview ? (
-              <Image src={photoPreview} alt="Preview" fill className="object-cover" />
+              <Image src={photoPreview} alt="Preview" fill className="object-cover" unoptimized={photoPreview.startsWith("blob:")} />
             ) : (
               <User className="size-10 text-muted-foreground/40" />
             )}
@@ -129,7 +171,7 @@ export default function TeamMemberForm() {
             {photoPreview && (
               <button
                 type="button"
-                onClick={() => { setPhotoFile(null); setPhotoPreview(null); if (fileRef.current) fileRef.current.value = ""; }}
+                onClick={handlePhotoClear}
                 className="text-xs text-muted-foreground hover:text-destructive transition-colors text-left"
               >
                 Remove
@@ -239,7 +281,7 @@ export default function TeamMemberForm() {
           className="flex items-center gap-2 h-10 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-60 transition-colors"
         >
           {pending && <Loader2 className="size-4 animate-spin" />}
-          {pending ? "Saving…" : "Create Member"}
+          {pending ? "Saving…" : isEdit ? "Save Changes" : "Create Member"}
         </button>
         <button
           type="button"

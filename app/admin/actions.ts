@@ -202,6 +202,16 @@ export async function listTeamMembers() {
     .orderBy(asc(teamMembers.displayOrder), asc(teamMembers.createdAt));
 }
 
+export async function getTeamMember(id: string) {
+  await requireUser();
+  const [member] = await db
+    .select()
+    .from(teamMembers)
+    .where(eq(teamMembers.id, id))
+    .limit(1);
+  return member ?? null;
+}
+
 export async function createTeamMember(data: {
   name: string;
   title: string;
@@ -226,6 +236,41 @@ export async function createTeamMember(data: {
     photo: data.photo ?? null,
     displayOrder: data.displayOrder ?? 0,
   });
+
+  revalidatePath("/admin/team");
+  revalidatePath("/");
+}
+
+export async function updateTeamMember(
+  id: string,
+  data: {
+    name: string;
+    title: string;
+    credentials: string[];
+    bio: string;
+    photo?: string | null;
+    displayOrder?: number;
+  }
+) {
+  await requireUser();
+
+  const slug = data.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  await db
+    .update(teamMembers)
+    .set({
+      slug,
+      name: data.name,
+      title: data.title,
+      credentials: data.credentials,
+      bio: data.bio,
+      ...(data.photo !== undefined ? { photo: data.photo } : {}),
+      displayOrder: data.displayOrder ?? 0,
+    })
+    .where(eq(teamMembers.id, id));
 
   revalidatePath("/admin/team");
   revalidatePath("/");
