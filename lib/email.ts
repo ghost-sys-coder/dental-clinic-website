@@ -20,6 +20,40 @@ export async function notifyNewSubmission() {
   });
 }
 
+export async function notifyDoctorDailySchedule(
+  doctorEmail: string,
+  doctorName: string,
+  slots: { scheduledAt: Date; patientName: string; service: string | null }[],
+) {
+  if (!process.env.SMTP_HOST) return;
+
+  const timeFormat = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+
+  const slotLines = slots.map(
+    (s, i) =>
+      `  ${i + 1}. ${timeFormat.format(s.scheduledAt)}${s.service ? ` — ${s.service}` : ""}`
+  );
+
+  await transport.sendMail({
+    from: process.env.SMTP_USER,
+    to: doctorEmail,
+    subject: `Your schedule for today — ${slots.length} appointment${slots.length === 1 ? "" : "s"}`,
+    text: [
+      `Good morning, ${doctorName}.`,
+      "",
+      `You have ${slots.length} appointment${slots.length === 1 ? "" : "s"} scheduled for today:`,
+      "",
+      ...slotLines,
+      "",
+      "Log in to the admin portal for full details on each patient.",
+    ].join("\n"),
+  });
+}
+
 export async function notifyDoctorReminder(
   doctorEmail: string,
   doctorName: string,
