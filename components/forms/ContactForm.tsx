@@ -86,7 +86,7 @@ export default function ContactForm() {
       const res = await fetch("/api/lead", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...values, type: "contact" }),
+        body: JSON.stringify({ ...values, source: "contact_form" }),
       });
 
       if (!res.ok) {

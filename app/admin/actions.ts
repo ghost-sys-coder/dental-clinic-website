@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { submissions, notes, auditLogs, profiles } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -142,6 +143,7 @@ export async function addNote(submissionId: string, body: string) {
     action: "NOTE_ADD",
   });
 
+  revalidatePath(`/admin/submissions/${submissionId}`);
   return note;
 }
 

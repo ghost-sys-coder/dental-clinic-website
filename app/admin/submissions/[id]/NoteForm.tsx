@@ -5,7 +5,7 @@ import { addNote } from "../../actions";
 import { toast } from "sonner";
 import { Loader2, Send } from "lucide-react";
 
-export default function NoteForm({ submissionId, onAdded }: { submissionId: string; onAdded: () => void }) {
+export default function NoteForm({ submissionId }: { submissionId: string }) {
   const [body, setBody] = useState("");
   const [pending, startTransition] = useTransition();
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -18,7 +18,6 @@ export default function NoteForm({ submissionId, onAdded }: { submissionId: stri
         await addNote(submissionId, body);
         setBody("");
         toast.success("Note added");
-        onAdded();
       } catch {
         toast.error("Failed to add note");
       }

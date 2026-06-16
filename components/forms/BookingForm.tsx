@@ -79,7 +79,8 @@ export default function BookingForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: `${fields.firstName} ${fields.lastName}`,
+          firstName: fields.firstName,
+          lastName: fields.lastName,
           email: fields.email,
           phone: fields.phone,
           service: fields.service,

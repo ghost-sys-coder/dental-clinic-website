@@ -191,7 +191,7 @@ export default async function SubmissionDetailPage({
           )}
         </div>
         <div className="px-4 py-3 flex flex-col gap-3">
-          <NoteForm submissionId={submission.id} onAdded={() => {}} />
+          <NoteForm submissionId={submission.id} />
           {submission.notes.length > 0 ? (
             <ul className="flex flex-col gap-2 mt-1">
               {submission.notes.map((n) => (
