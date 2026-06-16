@@ -18,6 +18,7 @@ interface InitialData {
   credentials: string[];
   bio: string;
   photo: string | null;
+  email: string | null;
   displayOrder: number;
 }
 
@@ -29,6 +30,7 @@ interface Fields {
   name: string;
   title: string;
   bio: string;
+  email: string;
   displayOrder: string;
 }
 
@@ -41,6 +43,7 @@ export default function TeamMemberForm({ initialData }: Props) {
     name: initialData?.name ?? "",
     title: initialData?.title ?? "",
     bio: initialData?.bio ?? "",
+    email: initialData?.email ?? "",
     displayOrder: String(initialData?.displayOrder ?? 0),
   });
   const [credentials, setCredentials] = useState<string[]>(initialData?.credentials ?? []);
@@ -127,6 +130,7 @@ export default function TeamMemberForm({ initialData }: Props) {
           credentials,
           bio: fields.bio.trim(),
           photo,
+          email: fields.email.trim() || null,
           displayOrder: parseInt(fields.displayOrder, 10) || 0,
         };
 
@@ -213,6 +217,22 @@ export default function TeamMemberForm({ initialData }: Props) {
           className={cn("flex h-10 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow", errors.title && "border-destructive")}
         />
         {errors.title && <p className="text-xs text-destructive">{errors.title}</p>}
+      </div>
+
+      {/* Email */}
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="tm-email" className="text-sm font-medium text-foreground">
+          Email Address
+        </label>
+        <input
+          id="tm-email"
+          type="email"
+          placeholder="doctor@clinic.com"
+          value={fields.email}
+          onChange={(e) => set("email", e.target.value)}
+          className="flex h-10 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+        />
+        <p className="text-xs text-muted-foreground">Used to notify the doctor when an appointment is assigned to them.</p>
       </div>
 
       {/* Credentials */}

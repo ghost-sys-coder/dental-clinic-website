@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getSubmission } from "../../actions";
+import { getSubmission, getAssignment, listTeamMembers } from "../../actions";
 import StatusControl from "./StatusControl";
 import NoteForm from "./NoteForm";
+import AssignmentPanel from "./AssignmentPanel";
 import {
   ChevronLeft,
   Mail,
@@ -42,7 +43,11 @@ export default async function SubmissionDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const submission = await getSubmission(id);
+  const [submission, assignment, doctors] = await Promise.all([
+    getSubmission(id),
+    getAssignment(id),
+    listTeamMembers(),
+  ]);
   if (!submission) notFound();
 
   return (
@@ -175,6 +180,29 @@ export default async function SubmissionDetailPage({
             {submission.message}
           </p>
         </div>
+      )}
+
+      {/* Assignment — only visible for BOOKED submissions */}
+      {submission.status === "BOOKED" && (
+        <AssignmentPanel
+          submissionId={submission.id}
+          doctors={doctors.map((d) => ({
+            id: d.id,
+            name: d.name,
+            title: d.title,
+            email: d.email,
+          }))}
+          existing={
+            assignment
+              ? {
+                  teamMemberId: assignment.teamMemberId,
+                  scheduledAt: assignment.scheduledAt,
+                  doctorName: assignment.doctorName,
+                  doctorTitle: assignment.doctorTitle,
+                }
+              : null
+          }
+        />
       )}
 
       {/* Internal notes */}

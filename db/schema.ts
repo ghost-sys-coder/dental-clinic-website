@@ -62,10 +62,22 @@ export const teamMembers = pgTable("team_members", {
   credentials: text("credentials").array().notNull().default([]),
   bio: text("bio").notNull().default(""),
   photo: text("photo"),
+  email: text("email"),
   displayOrder: integer("display_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
+
+export const assignments = pgTable("assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  submissionId: uuid("submission_id").notNull().unique().references(() => submissions.id, { onDelete: "cascade" }),
+  teamMemberId: uuid("team_member_id").notNull().references(() => teamMembers.id, { onDelete: "cascade" }),
+  scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("assignments_team_member_idx").on(t.teamMemberId),
+  index("assignments_scheduled_at_idx").on(t.scheduledAt),
+]);
 
 export const submissionsRelations = relations(submissions, ({ many }) => ({
   notes: many(notes),
@@ -80,4 +92,13 @@ export const notesRelations = relations(notes, ({ one }) => ({
 export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   submission: one(submissions, { fields: [auditLogs.submissionId], references: [submissions.id] }),
   actor: one(profiles, { fields: [auditLogs.actorId], references: [profiles.id] }),
+}));
+
+export const assignmentsRelations = relations(assignments, ({ one }) => ({
+  submission: one(submissions, { fields: [assignments.submissionId], references: [submissions.id] }),
+  teamMember: one(teamMembers, { fields: [assignments.teamMemberId], references: [teamMembers.id] }),
+}));
+
+export const teamMembersRelations = relations(teamMembers, ({ many }) => ({
+  assignments: many(assignments),
 }));

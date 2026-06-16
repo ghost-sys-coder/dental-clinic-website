@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { submissions, notes, auditLogs, profiles, teamMembers } from "@/db/schema";
+import { submissions, notes, auditLogs, profiles, teamMembers, assignments } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { eq, ilike, or, count, desc, asc, and, type SQL } from "drizzle-orm";
+import { eq, ilike, or, count, desc, asc, and, gte, lte, ne, type SQL } from "drizzle-orm";
+import { notifyDoctorAssignment } from "@/lib/email";
 
 type SubmissionStatus = "NEW" | "CONTACTED" | "BOOKED" | "ARCHIVED";
 
@@ -218,6 +219,7 @@ export async function createTeamMember(data: {
   credentials: string[];
   bio: string;
   photo?: string;
+  email?: string;
   displayOrder?: number;
 }) {
   await requireUser();
@@ -234,6 +236,7 @@ export async function createTeamMember(data: {
     credentials: data.credentials,
     bio: data.bio,
     photo: data.photo ?? null,
+    email: data.email ?? null,
     displayOrder: data.displayOrder ?? 0,
   });
 
@@ -249,6 +252,7 @@ export async function updateTeamMember(
     credentials: string[];
     bio: string;
     photo?: string | null;
+    email?: string | null;
     displayOrder?: number;
   }
 ) {
@@ -268,6 +272,7 @@ export async function updateTeamMember(
       credentials: data.credentials,
       bio: data.bio,
       ...(data.photo !== undefined ? { photo: data.photo } : {}),
+      ...(data.email !== undefined ? { email: data.email } : {}),
       displayOrder: data.displayOrder ?? 0,
     })
     .where(eq(teamMembers.id, id));
@@ -281,4 +286,95 @@ export async function deleteTeamMember(id: string) {
   await db.delete(teamMembers).where(eq(teamMembers.id, id));
   revalidatePath("/admin/team");
   revalidatePath("/");
+}
+
+// ── Assignments ───────────────────────────────────────────────────────────────
+
+export async function getAssignment(submissionId: string) {
+  await requireUser();
+  const [row] = await db
+    .select({
+      id: assignments.id,
+      submissionId: assignments.submissionId,
+      teamMemberId: assignments.teamMemberId,
+      scheduledAt: assignments.scheduledAt,
+      createdAt: assignments.createdAt,
+      doctorName: teamMembers.name,
+      doctorTitle: teamMembers.title,
+      doctorEmail: teamMembers.email,
+    })
+    .from(assignments)
+    .innerJoin(teamMembers, eq(assignments.teamMemberId, teamMembers.id))
+    .where(eq(assignments.submissionId, submissionId))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function assignSubmission(
+  submissionId: string,
+  teamMemberId: string,
+  scheduledAt: Date,
+) {
+  const user = await requireUser();
+
+  const [submission] = await db
+    .select({ status: submissions.status })
+    .from(submissions)
+    .where(eq(submissions.id, submissionId))
+    .limit(1);
+
+  if (!submission) throw new Error("Submission not found");
+  if (submission.status !== "BOOKED")
+    throw new Error("Only BOOKED submissions can be assigned");
+
+  // 30-minute collision window, excluding re-assignment of the same submission
+  const windowMs = 30 * 60 * 1000;
+  const lower = new Date(scheduledAt.getTime() - windowMs);
+  const upper = new Date(scheduledAt.getTime() + windowMs);
+
+  const conflicts = await db
+    .select({ id: assignments.id })
+    .from(assignments)
+    .where(
+      and(
+        eq(assignments.teamMemberId, teamMemberId),
+        gte(assignments.scheduledAt, lower),
+        lte(assignments.scheduledAt, upper),
+        ne(assignments.submissionId, submissionId),
+      )
+    )
+    .limit(1);
+
+  if (conflicts.length > 0)
+    throw new Error(
+      "This doctor already has an appointment within 30 minutes of that time. Please choose a different slot."
+    );
+
+  await db
+    .insert(assignments)
+    .values({ submissionId, teamMemberId, scheduledAt })
+    .onConflictDoUpdate({
+      target: assignments.submissionId,
+      set: { teamMemberId, scheduledAt },
+    });
+
+  await db.insert(auditLogs).values({
+    submissionId,
+    actorId: user.id,
+    action: "ASSIGNED",
+    detail: `Scheduled for ${scheduledAt.toISOString()}`,
+  });
+
+  // Email the doctor — fire and forget, never block the action
+  const [doctor] = await db
+    .select({ email: teamMembers.email, name: teamMembers.name })
+    .from(teamMembers)
+    .where(eq(teamMembers.id, teamMemberId))
+    .limit(1);
+
+  if (doctor?.email) {
+    notifyDoctorAssignment(doctor.email, doctor.name, scheduledAt).catch(() => {});
+  }
+
+  revalidatePath(`/admin/submissions/${submissionId}`);
 }
