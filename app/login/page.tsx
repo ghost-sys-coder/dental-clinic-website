@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "./actions";
 import { getClinic } from "@/lib/useClinic";
@@ -14,7 +14,7 @@ const features = [
   { icon: ShieldCheck, label: "HIPAA-conscious audit trail" },
 ];
 
-export default function LoginPage() {
+function LoginForm() {
   const searchParams = useSearchParams();
   const error = searchParams.get("error");
   const [visible, setVisible] = useState(false);
@@ -159,5 +159,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }
