@@ -317,6 +317,33 @@ export async function deleteTeamMember(id: string) {
   revalidatePath("/");
 }
 
+// ── Doctor upcoming schedule ──────────────────────────────────────────────────
+
+export async function getDoctorUpcomingAssignments(teamMemberId: string) {
+  await requireUser();
+  const now = new Date();
+  return db
+    .select({
+      id: assignments.id,
+      scheduledAt: assignments.scheduledAt,
+      submissionId: assignments.submissionId,
+      patientName: submissions.fullName,
+      service: submissions.service,
+      phone: submissions.phone,
+      email: submissions.email,
+      type: submissions.type,
+    })
+    .from(assignments)
+    .innerJoin(submissions, eq(assignments.submissionId, submissions.id))
+    .where(
+      and(
+        eq(assignments.teamMemberId, teamMemberId),
+        gte(assignments.scheduledAt, now),
+      )
+    )
+    .orderBy(asc(assignments.scheduledAt));
+}
+
 // ── Assignments ───────────────────────────────────────────────────────────────
 
 export async function getAssignment(submissionId: string) {

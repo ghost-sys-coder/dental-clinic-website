@@ -73,6 +73,7 @@ export const assignments = pgTable("assignments", {
   submissionId: uuid("submission_id").notNull().unique().references(() => submissions.id, { onDelete: "cascade" }),
   teamMemberId: uuid("team_member_id").notNull().references(() => teamMembers.id, { onDelete: "cascade" }),
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+  reminderSentAt: timestamp("reminder_sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("assignments_team_member_idx").on(t.teamMemberId),

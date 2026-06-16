@@ -43,7 +43,7 @@ const ROLE_BADGE: Record<Role, string> = {
 const ALL_NAV = [
   { href: "/admin",             label: "Dashboard",   icon: LayoutDashboard, exact: true,  minRole: "VIEWER"  },
   { href: "/admin/submissions", label: "Submissions", icon: Inbox,           exact: false, minRole: "VIEWER"  },
-  { href: "/admin/team",        label: "Team",        icon: Users,           exact: false, minRole: "EDITOR"  },
+  { href: "/admin/team",        label: "Team",        icon: Users,           exact: false, minRole: "VIEWER"  },
   { href: "/admin/settings",    label: "Settings",    icon: Settings,        exact: false, minRole: "EDITOR"  },
 ] as const;
 

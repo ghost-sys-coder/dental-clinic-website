@@ -20,6 +20,39 @@ export async function notifyNewSubmission() {
   });
 }
 
+export async function notifyDoctorReminder(
+  doctorEmail: string,
+  doctorName: string,
+  scheduledAt: Date,
+) {
+  if (!process.env.SMTP_HOST) return;
+
+  const formatted = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(scheduledAt);
+
+  await transport.sendMail({
+    from: process.env.SMTP_USER,
+    to: doctorEmail,
+    subject: "Reminder: appointment in 30 minutes",
+    text: [
+      `Hi ${doctorName},`,
+      "",
+      "This is a reminder that you have a patient appointment in approximately 30 minutes.",
+      "",
+      `Scheduled: ${formatted}`,
+      "",
+      "Please log in to the admin portal to review the full details.",
+    ].join("\n"),
+  });
+}
+
 export async function notifyDoctorAssignment(
   doctorEmail: string,
   doctorName: string,

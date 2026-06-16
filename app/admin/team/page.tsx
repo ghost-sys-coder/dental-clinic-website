@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Plus, User, Trash2, Pencil } from "lucide-react";
+import { Plus, User, Trash2, Pencil, Eye } from "lucide-react";
 import { listTeamMembers, deleteTeamMember } from "@/app/admin/actions";
 import { getSessionRole } from "@/lib/auth";
 
@@ -47,8 +47,8 @@ export default async function TeamPage() {
               key={member.id}
               className="flex flex-col rounded-xl border border-border bg-card overflow-hidden shadow-sm"
             >
-              {/* Photo */}
-              <div className="relative aspect-[3/2] bg-muted">
+              {/* Photo — clicking goes to profile */}
+              <Link href={`/admin/team/${member.id}`} className="relative aspect-[3/2] bg-muted block">
                 {member.photo ? (
                   <Image src={member.photo} alt={member.name} fill className="object-cover" sizes="(max-width: 640px) 100vw, 33vw" />
                 ) : (
@@ -56,11 +56,13 @@ export default async function TeamPage() {
                     <User className="size-12 text-muted-foreground/30" />
                   </div>
                 )}
-              </div>
+              </Link>
 
               {/* Info */}
               <div className="flex flex-col gap-1 p-4 flex-1">
-                <p className="font-semibold text-sm text-foreground">{member.name}</p>
+                <Link href={`/admin/team/${member.id}`} className="font-semibold text-sm text-foreground hover:text-primary transition-colors w-fit">
+                  {member.name}
+                </Link>
                 <p className="text-xs text-primary">{member.title}</p>
                 {member.credentials.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1">
@@ -75,31 +77,40 @@ export default async function TeamPage() {
               </div>
 
               {/* Actions */}
-              {canWrite && (
-                <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border">
-                  <Link
-                    href={`/admin/team/${member.id}/edit`}
-                    className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
-                  >
-                    <Pencil className="size-3.5" />
-                    Edit
-                  </Link>
-                  <form
-                    action={async () => {
-                      "use server";
-                      await deleteTeamMember(member.id);
-                    }}
-                  >
-                    <button
-                      type="submit"
-                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+              <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-border">
+                <Link
+                  href={`/admin/team/${member.id}`}
+                  className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
+                >
+                  <Eye className="size-3.5" />
+                  View
+                </Link>
+                {canWrite && (
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/admin/team/${member.id}/edit`}
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
                     >
-                      <Trash2 className="size-3.5" />
-                      Delete
-                    </button>
-                  </form>
-                </div>
-              )}
+                      <Pencil className="size-3.5" />
+                      Edit
+                    </Link>
+                    <form
+                      action={async () => {
+                        "use server";
+                        await deleteTeamMember(member.id);
+                      }}
+                    >
+                      <button
+                        type="submit"
+                        className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                      >
+                        <Trash2 className="size-3.5" />
+                        Delete
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>
