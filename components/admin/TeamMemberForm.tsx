@@ -134,7 +134,7 @@ export default function TeamMemberForm({ initialData }: Props) {
           await updateTeamMember(initialData.id, payload);
           toast.success("Team member updated");
         } else {
-          await createTeamMember(payload);
+          await createTeamMember({ ...payload, photo: payload.photo ?? undefined });
           toast.success("Team member created");
         }
 
