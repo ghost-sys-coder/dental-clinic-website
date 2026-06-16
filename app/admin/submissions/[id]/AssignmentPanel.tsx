@@ -64,11 +64,11 @@ export default function AssignmentPanel({ submissionId, doctors, existing }: Pro
     }
 
     startTransition(async () => {
-      try {
-        await assignSubmission(submissionId, doctorId, scheduledAt);
+      const result = await assignSubmission(submissionId, doctorId, scheduledAt);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
         toast.success(isReassign ? "Assignment updated." : "Appointment assigned.");
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Something went wrong.");
       }
     });
   }

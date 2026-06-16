@@ -343,8 +343,13 @@ export async function assignSubmission(
   submissionId: string,
   teamMemberId: string,
   scheduledAt: Date,
-) {
-  const { user } = await requireRole("EDITOR");
+): Promise<{ error: string } | { error: null }> {
+  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  try {
+    ({ user } = await requireRole("EDITOR"));
+  } catch {
+    return { error: "You don't have permission to assign submissions." };
+  }
 
   const [submission] = await db
     .select({ status: submissions.status })
@@ -352,9 +357,9 @@ export async function assignSubmission(
     .where(eq(submissions.id, submissionId))
     .limit(1);
 
-  if (!submission) throw new Error("Submission not found");
+  if (!submission) return { error: "Submission not found." };
   if (submission.status !== "BOOKED")
-    throw new Error("Only BOOKED submissions can be assigned");
+    return { error: "Only BOOKED submissions can be assigned." };
 
   // 30-minute collision window, excluding re-assignment of the same submission
   const windowMs = 30 * 60 * 1000;
@@ -375,9 +380,10 @@ export async function assignSubmission(
     .limit(1);
 
   if (conflicts.length > 0)
-    throw new Error(
-      "This doctor already has an appointment within 30 minutes of that time. Please choose a different slot."
-    );
+    return {
+      error:
+        "This doctor already has an appointment within 30 minutes of that time. Please choose a different slot.",
+    };
 
   await db
     .insert(assignments)
@@ -406,4 +412,5 @@ export async function assignSubmission(
   }
 
   revalidatePath(`/admin/submissions/${submissionId}`);
+  return { error: null };
 }
