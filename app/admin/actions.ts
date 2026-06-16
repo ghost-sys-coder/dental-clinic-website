@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { submissions, notes, auditLogs, profiles } from "@/db/schema";
+import { submissions, notes, auditLogs, profiles, teamMembers } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { eq, ilike, or, count, desc, and, type SQL } from "drizzle-orm";
+import { eq, ilike, or, count, desc, asc, and, type SQL } from "drizzle-orm";
 
 type SubmissionStatus = "NEW" | "CONTACTED" | "BOOKED" | "ARCHIVED";
 
@@ -190,4 +190,50 @@ export async function exportSubmissionsCsv(status?: SubmissionStatus) {
 export async function listStaff() {
   await requireUser();
   return db.select().from(profiles).orderBy(profiles.createdAt);
+}
+
+// ── Team members ──────────────────────────────────────────────────────────────
+
+export async function listTeamMembers() {
+  await requireUser();
+  return db
+    .select()
+    .from(teamMembers)
+    .orderBy(asc(teamMembers.displayOrder), asc(teamMembers.createdAt));
+}
+
+export async function createTeamMember(data: {
+  name: string;
+  title: string;
+  credentials: string[];
+  bio: string;
+  photo?: string;
+  displayOrder?: number;
+}) {
+  await requireUser();
+
+  const slug = data.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  await db.insert(teamMembers).values({
+    slug,
+    name: data.name,
+    title: data.title,
+    credentials: data.credentials,
+    bio: data.bio,
+    photo: data.photo ?? null,
+    displayOrder: data.displayOrder ?? 0,
+  });
+
+  revalidatePath("/admin/team");
+  revalidatePath("/");
+}
+
+export async function deleteTeamMember(id: string) {
+  await requireUser();
+  await db.delete(teamMembers).where(eq(teamMembers.id, id));
+  revalidatePath("/admin/team");
+  revalidatePath("/");
 }

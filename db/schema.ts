@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, uuid, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, uuid, timestamp, index, integer } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 export const submissionType = pgEnum("submission_type", ["APPOINTMENT", "CONTACT"]);
@@ -53,6 +53,19 @@ export const auditLogs = pgTable("audit_logs", {
   index("audit_submission_idx").on(t.submissionId),
   index("audit_actor_idx").on(t.actorId),
 ]);
+
+export const teamMembers = pgTable("team_members", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  title: text("title").notNull(),
+  credentials: text("credentials").array().notNull().default([]),
+  bio: text("bio").notNull().default(""),
+  photo: text("photo"),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
 
 export const submissionsRelations = relations(submissions, ({ many }) => ({
   notes: many(notes),

@@ -25,11 +25,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { LayoutDashboard, Inbox, Settings, LogOut, Loader2, ArrowUpLeft } from "lucide-react";
+import { LayoutDashboard, Inbox, Settings, LogOut, Loader2, ArrowUpLeft, Users } from "lucide-react";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/admin/submissions", label: "Submissions", icon: Inbox, exact: false },
+  { href: "/admin/team", label: "Team", icon: Users, exact: false },
   { href: "/admin/settings", label: "Settings", icon: Settings, exact: false },
 ];
 
