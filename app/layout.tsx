@@ -6,9 +6,6 @@ import {
   Cormorant_Garamond,
 } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
-import StickyNav from "@/components/layout/StickyNav";
-import SiteFooter from "@/components/layout/SiteFooter";
-import FloatingMobileBar from "@/components/layout/FloatingMobileBar";
 import { getClinic, getTheme } from "@/lib/useClinic";
 import JsonLd from "@/components/seo/JsonLd";
 import { buildDentistSchema } from "@/lib/jsonld";
@@ -98,10 +95,7 @@ export default function RootLayout({
         <JsonLd data={buildDentistSchema(clinic)} />
       </head>
       <body className="min-h-full flex flex-col">
-        <StickyNav />
-        <main className="flex-1">{children}</main>
-        <SiteFooter />
-        <FloatingMobileBar />
+        {children}
         <Toaster />
       </body>
     </html>

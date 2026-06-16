@@ -15,8 +15,9 @@ import { getClinic } from "@/lib/useClinic";
 import { CheckCircle, Loader2, CalendarCheck } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { intakeSchema } from "@/lib/schemas";
 
-interface FormFields {
+type FormFields = {
   firstName: string;
   lastName: string;
   email: string;
@@ -24,33 +25,23 @@ interface FormFields {
   service: string;
   preferredDate: string;
   notes: string;
-}
+};
 
-interface FormErrors {
-  firstName?: string;
-  lastName?: string;
-  email?: string;
-  phone?: string;
-  service?: string;
-}
+type FormErrors = Partial<Record<keyof FormFields, string>>;
 
 function validate(fields: FormFields): FormErrors {
-  const errors: FormErrors = {};
-  if (!fields.firstName.trim()) errors.firstName = "First name is required.";
-  if (!fields.lastName.trim()) errors.lastName = "Last name is required.";
-  if (!fields.email.trim()) {
-    errors.email = "Email is required.";
-  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email)) {
-    errors.email = "Enter a valid email address.";
-  }
-  if (!fields.phone.trim()) {
-    errors.phone = "Phone number is required.";
-  } else if (!/^\+?[\d\s\-().]{7,}$/.test(fields.phone)) {
-    errors.phone = "Enter a valid phone number.";
-  }
-  if (!fields.service) errors.service = "Please select an appointment type.";
-  return errors;
+  const result = intakeSchema.safeParse({ ...fields, type: "booking" });
+  if (result.success) return {};
+  const flat = result.error.flatten().fieldErrors;
+  return {
+    firstName: flat.firstName?.[0],
+    lastName: flat.lastName?.[0],
+    email: flat.email?.[0],
+    phone: flat.phone?.[0],
+    service: flat.service?.[0],
+  };
 }
+
 
 export default function BookingForm() {
   const clinic = getClinic();
@@ -84,7 +75,7 @@ export default function BookingForm() {
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/lead", {
+      const res = await fetch("/api/intake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
