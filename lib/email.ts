@@ -20,6 +20,34 @@ export async function notifyNewSubmission() {
   });
 }
 
+export async function sendStaffCredentials(
+  email: string,
+  password: string,
+  role: string,
+) {
+  if (!process.env.SMTP_HOST) return;
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const loginUrl = siteUrl ? `${siteUrl}/login` : "your clinic admin portal";
+
+  await transport.sendMail({
+    from: process.env.SMTP_USER,
+    to: email,
+    subject: "Your admin account is ready",
+    text: [
+      "Your account has been created for the clinic admin portal.",
+      "",
+      `Email:    ${email}`,
+      `Password: ${password}`,
+      `Role:     ${role}`,
+      "",
+      `Log in here: ${loginUrl}`,
+      "",
+      "Please change your password after your first login.",
+    ].join("\n"),
+  });
+}
+
 export async function notifyDoctorDailySchedule(
   doctorEmail: string,
   doctorName: string,

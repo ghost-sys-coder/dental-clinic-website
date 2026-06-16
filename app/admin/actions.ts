@@ -6,7 +6,7 @@ import { submissions, notes, auditLogs, profiles, teamMembers, assignments } fro
 import { requireUser, requireRole, type Role } from "@/lib/auth";
 import { supabaseAdmin } from "@/utils/supabase/admin";
 import { eq, ilike, or, count, desc, asc, and, gte, lte, ne, type SQL } from "drizzle-orm";
-import { notifyDoctorAssignment } from "@/lib/email";
+import { notifyDoctorAssignment, sendStaffCredentials } from "@/lib/email";
 
 type SubmissionStatus = "NEW" | "CONTACTED" | "BOOKED" | "ARCHIVED";
 
@@ -194,15 +194,40 @@ export async function listStaff() {
   return db.select().from(profiles).orderBy(profiles.createdAt);
 }
 
-export async function inviteUser(email: string, role: Role) {
-  await requireRole("ADMIN");
+export async function inviteUser(
+  email: string,
+  password: string,
+  role: Role,
+): Promise<{ error: string | null }> {
+  try {
+    await requireRole("ADMIN");
+  } catch {
+    return { error: "You don't have permission to invite users." };
+  }
 
-  const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-    data: { role },
+  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { role },
   });
 
-  if (error) throw new Error(error.message);
+  if (error) return { error: error.message };
+
+  // Seed profile immediately so the role is correct from first login
+  if (data.user) {
+    await db.insert(profiles).values({
+      id: data.user.id,
+      email: data.user.email!,
+      fullName: null,
+      role,
+    }).onConflictDoNothing();
+  }
+
+  await sendStaffCredentials(email, password, role);
+
   revalidatePath("/admin/settings");
+  return { error: null };
 }
 
 export async function updateUserRole(profileId: string, newRole: Role) {
