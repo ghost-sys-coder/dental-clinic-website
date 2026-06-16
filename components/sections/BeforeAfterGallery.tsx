@@ -47,7 +47,6 @@ export default function BeforeAfterGallery() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
           {pairs.map((pair, index) => {
             const activeTab = activeTabs[index];
-            const src = activeTab === "before" ? pair.before : pair.after;
 
             return (
               <div
@@ -57,13 +56,19 @@ export default function BeforeAfterGallery() {
               >
                 {/* Image container */}
                 <div className="relative overflow-hidden rounded-xl aspect-4/3 bg-muted">
-                  <Image
-                    src={src}
-                    alt={`${activeTab === "before" ? "Before" : "After"}: ${pair.caption}`}
-                    fill
-                    className="object-cover transition-opacity duration-300"
-                    sizes="(max-width: 768px) 100vw, 33vw"
-                  />
+                  {(["before", "after"] as const).map((side) => (
+                    <Image
+                      key={side}
+                      src={side === "before" ? pair.before : pair.after}
+                      alt={`${side === "before" ? "Before" : "After"}: ${pair.caption}`}
+                      fill
+                      className={cn(
+                        "object-cover transition-opacity duration-500",
+                        activeTab === side ? "opacity-100" : "opacity-0"
+                      )}
+                      sizes="(max-width: 768px) 100vw, 33vw"
+                    />
+                  ))}
                 </div>
 
                 {/* Caption + toggle */}

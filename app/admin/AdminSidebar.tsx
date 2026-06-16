@@ -25,7 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { LayoutDashboard, Inbox, Settings, LogOut, Loader2 } from "lucide-react";
+import { LayoutDashboard, Inbox, Settings, LogOut, Loader2, ArrowUpLeft } from "lucide-react";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -96,6 +96,14 @@ export default function AdminSidebar({
         </SidebarContent>
 
         <SidebarFooter>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Back to site">
+              <Link href="/">
+                <ArrowUpLeft />
+                <span>Back to site</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <div className="flex items-center gap-2.5 px-2 py-1.5">
               {/* Initials — acts as sign-out trigger in icon-collapsed mode */}
