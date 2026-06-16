@@ -142,7 +142,7 @@ export default async function SubmissionsPage({
                   <td className="px-3 py-2.5 text-muted-foreground capitalize text-xs">
                     {r.type.toLowerCase()}
                   </td>
-                  <td className="px-3 py-2.5 text-muted-foreground text-xs max-w-[140px] truncate">
+                  <td className="px-3 py-2.5 text-muted-foreground text-xs max-w-35 truncate">
                     {r.service ?? "—"}
                   </td>
                   <td className="px-3 py-2.5">

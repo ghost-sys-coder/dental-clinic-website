@@ -1,9 +1,29 @@
+import { redirect } from "next/navigation";
 import { listStaff } from "../actions";
+import { getSessionRole, requireUser } from "@/lib/auth";
 import ExportButton from "./ExportButton";
-import { Users, Download, Bell, ShieldCheck } from "lucide-react";
+import InviteForm from "./InviteForm";
+import RoleControl from "./RoleControl";
+import { Users, Download, Bell, ShieldCheck, UserPlus } from "lucide-react";
+import type { Role } from "@/lib/auth";
+
+const ROLE_BADGE: Record<Role, string> = {
+  ADMIN: "bg-primary/10 text-primary border-primary/20",
+  EDITOR: "bg-blue-50 text-blue-700 border-blue-200",
+  VIEWER: "bg-muted text-muted-foreground border-border",
+};
 
 export default async function SettingsPage() {
-  const staff = await listStaff();
+  const [user, userRole, staff] = await Promise.all([
+    requireUser(),
+    getSessionRole(),
+    listStaff(),
+  ]);
+
+  // Viewers have no business here
+  if (userRole === "VIEWER") redirect("/admin");
+
+  const isAdmin = userRole === "ADMIN";
 
   return (
     <div className="flex flex-col gap-4 max-w-2xl">
@@ -42,7 +62,7 @@ export default async function SettingsPage() {
         </div>
       </div>
 
-      {/* Staff */}
+      {/* Staff accounts */}
       <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border bg-muted/30 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -74,34 +94,33 @@ export default async function SettingsPage() {
                   </p>
                   <p className="text-xs text-muted-foreground truncate">{s.email}</p>
                 </div>
-                <span
-                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                    s.role === "ADMIN"
-                      ? "bg-primary/10 text-primary border-primary/20"
-                      : "bg-muted text-muted-foreground border-border"
-                  }`}
-                >
-                  {s.role}
-                </span>
+
+                {isAdmin ? (
+                  <RoleControl
+                    profileId={s.id}
+                    currentRole={s.role as Role}
+                    isSelf={s.id === user.id}
+                  />
+                ) : (
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${ROLE_BADGE[s.role as Role]}`}>
+                    {s.role}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
         )}
 
-        <div className="px-4 py-2.5 border-t border-border bg-muted/20">
-          <p className="text-xs text-muted-foreground">
-            Add staff from the{" "}
-            <a
-              href="https://app.supabase.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline font-medium"
-            >
-              Supabase dashboard
-            </a>
-            . No public signup — admin-only.
-          </p>
-        </div>
+        {/* Invite section — admin only */}
+        {isAdmin && (
+          <div className="px-4 py-3 border-t border-border bg-muted/20">
+            <div className="flex items-center gap-2 mb-3">
+              <UserPlus className="size-3.5 text-muted-foreground" />
+              <p className="text-xs font-semibold text-foreground">Invite a team member</p>
+            </div>
+            <InviteForm />
+          </div>
+        )}
       </div>
 
       {/* Export */}

@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { submissions, notes, auditLogs, profiles, teamMembers, assignments } from "@/db/schema";
-import { requireUser } from "@/lib/auth";
+import { requireUser, requireRole, type Role } from "@/lib/auth";
+import { supabaseAdmin } from "@/utils/supabase/admin";
 import { eq, ilike, or, count, desc, asc, and, gte, lte, ne, type SQL } from "drizzle-orm";
 import { notifyDoctorAssignment } from "@/lib/email";
 
@@ -106,7 +107,7 @@ export async function getSubmission(id: string) {
 // ── Status update ─────────────────────────────────────────────────────────────
 
 export async function updateSubmissionStatus(id: string, status: SubmissionStatus) {
-  const user = await requireUser();
+  const { user } = await requireRole("EDITOR");
 
   const [existing] = await db
     .select({ status: submissions.status })
@@ -129,7 +130,7 @@ export async function updateSubmissionStatus(id: string, status: SubmissionStatu
 // ── Notes ────────────────────────────────────────────────────────────────────
 
 export async function addNote(submissionId: string, body: string) {
-  const user = await requireUser();
+  const { user } = await requireRole("EDITOR");
 
   if (!body.trim()) throw new Error("Note body cannot be empty");
 
@@ -151,7 +152,7 @@ export async function addNote(submissionId: string, body: string) {
 // ── CSV export ────────────────────────────────────────────────────────────────
 
 export async function exportSubmissionsCsv(status?: SubmissionStatus) {
-  const user = await requireUser();
+  const { user } = await requireRole("EDITOR");
 
   const where = status ? eq(submissions.status, status) : undefined;
   const rows = await db
@@ -193,6 +194,34 @@ export async function listStaff() {
   return db.select().from(profiles).orderBy(profiles.createdAt);
 }
 
+export async function inviteUser(email: string, role: Role) {
+  await requireRole("ADMIN");
+
+  const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+    data: { role },
+  });
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/admin/settings");
+}
+
+export async function updateUserRole(profileId: string, newRole: Role) {
+  const { user } = await requireRole("ADMIN");
+  if (profileId === user.id) throw new Error("You cannot change your own role.");
+
+  await db.update(profiles).set({ role: newRole }).where(eq(profiles.id, profileId));
+  revalidatePath("/admin/settings");
+}
+
+export async function revokeUser(profileId: string) {
+  const { user } = await requireRole("ADMIN");
+  if (profileId === user.id) throw new Error("You cannot revoke your own account.");
+
+  await supabaseAdmin.auth.admin.deleteUser(profileId);
+  await db.delete(profiles).where(eq(profiles.id, profileId));
+  revalidatePath("/admin/settings");
+}
+
 // ── Team members ──────────────────────────────────────────────────────────────
 
 export async function listTeamMembers() {
@@ -222,7 +251,7 @@ export async function createTeamMember(data: {
   email?: string;
   displayOrder?: number;
 }) {
-  await requireUser();
+  await requireRole("EDITOR");
 
   const slug = data.name
     .toLowerCase()
@@ -256,7 +285,7 @@ export async function updateTeamMember(
     displayOrder?: number;
   }
 ) {
-  await requireUser();
+  await requireRole("EDITOR");
 
   const slug = data.name
     .toLowerCase()
@@ -282,7 +311,7 @@ export async function updateTeamMember(
 }
 
 export async function deleteTeamMember(id: string) {
-  await requireUser();
+  await requireRole("EDITOR");
   await db.delete(teamMembers).where(eq(teamMembers.id, id));
   revalidatePath("/admin/team");
   revalidatePath("/");
@@ -315,7 +344,7 @@ export async function assignSubmission(
   teamMemberId: string,
   scheduledAt: Date,
 ) {
-  const user = await requireUser();
+  const { user } = await requireRole("EDITOR");
 
   const [submission] = await db
     .select({ status: submissions.status })

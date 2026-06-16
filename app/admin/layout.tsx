@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { cookies } from "next/headers";
 import { getClinic } from "@/lib/useClinic";
 import { createClient } from "@/utils/supabase/server";
+import { getSessionRole } from "@/lib/auth";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -16,10 +17,12 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     ?? user?.email
     ?? "Staff";
 
+  const userRole = await getSessionRole();
+
   return (
     <TooltipProvider>
       <SidebarProvider>
-        <AdminSidebar clinicName={clinic.meta.name} userName={displayName} />
+        <AdminSidebar clinicName={clinic.meta.name} userName={displayName} userRole={userRole} />
         <SidebarInset>
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
             <SidebarTrigger className="-ml-1" />

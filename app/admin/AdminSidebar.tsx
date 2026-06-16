@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/login/actions";
+import type { Role } from "@/lib/auth";
 import {
   Sidebar,
   SidebarContent,
@@ -27,17 +28,30 @@ import {
 } from "@/components/ui/dialog";
 import { LayoutDashboard, Inbox, Settings, LogOut, Loader2, ArrowUpLeft, Users } from "lucide-react";
 
-const navItems = [
-  { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { href: "/admin/submissions", label: "Submissions", icon: Inbox, exact: false },
-  { href: "/admin/team", label: "Team", icon: Users, exact: false },
-  { href: "/admin/settings", label: "Settings", icon: Settings, exact: false },
-];
+const ROLE_LABEL: Record<Role, string> = {
+  ADMIN: "Admin",
+  EDITOR: "Editor",
+  VIEWER: "Viewer",
+};
+
+const ROLE_BADGE: Record<Role, string> = {
+  ADMIN: "bg-primary/15 text-primary",
+  EDITOR: "bg-blue-100 text-blue-700",
+  VIEWER: "bg-muted text-muted-foreground",
+};
+
+const ALL_NAV = [
+  { href: "/admin",             label: "Dashboard",   icon: LayoutDashboard, exact: true,  minRole: "VIEWER"  },
+  { href: "/admin/submissions", label: "Submissions", icon: Inbox,           exact: false, minRole: "VIEWER"  },
+  { href: "/admin/team",        label: "Team",        icon: Users,           exact: false, minRole: "EDITOR"  },
+  { href: "/admin/settings",    label: "Settings",    icon: Settings,        exact: false, minRole: "EDITOR"  },
+] as const;
+
+const HIERARCHY: Record<Role, number> = { VIEWER: 0, EDITOR: 1, ADMIN: 2 };
 
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) {
-    // Could be an email — use first two chars before @
     const local = name.split("@")[0];
     return local.slice(0, 2).toUpperCase();
   }
@@ -47,13 +61,19 @@ function getInitials(name: string) {
 export default function AdminSidebar({
   clinicName,
   userName,
+  userRole,
 }: {
   clinicName: string;
   userName: string;
+  userRole: Role;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  const visibleNav = ALL_NAV.filter(
+    (item) => HIERARCHY[userRole] >= HIERARCHY[item.minRole as Role]
+  );
 
   function handleConfirm() {
     startTransition(() => signOut());
@@ -78,7 +98,7 @@ export default function AdminSidebar({
             <SidebarGroupLabel>Navigation</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {navItems.map(({ href, label, icon: Icon, exact }) => {
+                {visibleNav.map(({ href, label, icon: Icon, exact }) => {
                   const isActive = exact ? pathname === href : pathname.startsWith(href);
                   return (
                     <SidebarMenuItem key={href}>
@@ -107,7 +127,6 @@ export default function AdminSidebar({
           </SidebarMenuItem>
           <SidebarMenuItem>
             <div className="flex items-center gap-2.5 px-2 py-1.5">
-              {/* Initials — acts as sign-out trigger in icon-collapsed mode */}
               <button
                 type="button"
                 onClick={() => setOpen(true)}
@@ -117,15 +136,15 @@ export default function AdminSidebar({
                 {getInitials(userName)}
               </button>
 
-              {/* Name + role — hidden when collapsed */}
               <div className="flex flex-col min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
                 <span className="text-xs font-medium text-sidebar-foreground truncate leading-tight">
                   {userName}
                 </span>
-                <span className="text-[10px] text-sidebar-foreground/50 leading-tight">Staff</span>
+                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full w-fit mt-0.5 ${ROLE_BADGE[userRole]}`}>
+                  {ROLE_LABEL[userRole]}
+                </span>
               </div>
 
-              {/* Sign-out icon button — hidden when collapsed */}
               <button
                 type="button"
                 onClick={() => setOpen(true)}

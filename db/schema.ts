@@ -3,13 +3,13 @@ import { relations } from "drizzle-orm";
 
 export const submissionType = pgEnum("submission_type", ["APPOINTMENT", "CONTACT"]);
 export const submissionStatus = pgEnum("submission_status", ["NEW", "CONTACTED", "BOOKED", "ARCHIVED"]);
-export const roleEnum = pgEnum("role", ["ADMIN", "STAFF"]);
+export const roleEnum = pgEnum("role", ["ADMIN", "EDITOR", "VIEWER"]);
 
 export const profiles = pgTable("profiles", {
   id: uuid("id").primaryKey(),
   email: text("email").notNull().unique(),
   fullName: text("full_name"),
-  role: roleEnum("role").notNull().default("STAFF"),
+  role: roleEnum("role").notNull().default("VIEWER"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

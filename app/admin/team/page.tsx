@@ -2,11 +2,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { Plus, User, Trash2, Pencil } from "lucide-react";
 import { listTeamMembers, deleteTeamMember } from "@/app/admin/actions";
+import { getSessionRole } from "@/lib/auth";
 
 export const metadata = { title: "Team — Admin" };
 
 export default async function TeamPage() {
-  const members = await listTeamMembers();
+  const [members, userRole] = await Promise.all([listTeamMembers(), getSessionRole()]);
+  const canWrite = userRole !== "VIEWER";
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -18,13 +20,15 @@ export default async function TeamPage() {
             Profiles shown on the public-facing team section.
           </p>
         </div>
-        <Link
-          href="/admin/team/new"
-          className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
-        >
-          <Plus className="size-4" />
-          New Member
-        </Link>
+        {canWrite && (
+          <Link
+            href="/admin/team/new"
+            className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="size-4" />
+            New Member
+          </Link>
+        )}
       </div>
 
       {/* List */}
@@ -71,29 +75,31 @@ export default async function TeamPage() {
               </div>
 
               {/* Actions */}
-              <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border">
-                <Link
-                  href={`/admin/team/${member.id}/edit`}
-                  className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
-                >
-                  <Pencil className="size-3.5" />
-                  Edit
-                </Link>
-                <form
-                  action={async () => {
-                    "use server";
-                    await deleteTeamMember(member.id);
-                  }}
-                >
-                  <button
-                    type="submit"
-                    className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+              {canWrite && (
+                <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border">
+                  <Link
+                    href={`/admin/team/${member.id}/edit`}
+                    className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
                   >
-                    <Trash2 className="size-3.5" />
-                    Delete
-                  </button>
-                </form>
-              </div>
+                    <Pencil className="size-3.5" />
+                    Edit
+                  </Link>
+                  <form
+                    action={async () => {
+                      "use server";
+                      await deleteTeamMember(member.id);
+                    }}
+                  >
+                    <button
+                      type="submit"
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <Trash2 className="size-3.5" />
+                      Delete
+                    </button>
+                  </form>
+                </div>
+              )}
             </div>
           ))}
         </div>

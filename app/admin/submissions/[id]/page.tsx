@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getSubmission, getAssignment, listTeamMembers } from "../../actions";
+import { getSessionRole } from "@/lib/auth";
 import StatusControl from "./StatusControl";
 import NoteForm from "./NoteForm";
 import AssignmentPanel from "./AssignmentPanel";
@@ -43,11 +44,13 @@ export default async function SubmissionDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [submission, assignment, doctors] = await Promise.all([
+  const [submission, assignment, doctors, userRole] = await Promise.all([
     getSubmission(id),
     getAssignment(id),
     listTeamMembers(),
+    getSessionRole(),
   ]);
+  const canWrite = userRole !== "VIEWER";
   if (!submission) notFound();
 
   return (
@@ -75,7 +78,10 @@ export default async function SubmissionDetailPage({
               Received {formatDate(submission.createdAt)}
             </p>
           </div>
-          <StatusControl id={submission.id} current={submission.status} />
+          {canWrite
+            ? <StatusControl id={submission.id} current={submission.status} />
+            : <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-muted text-muted-foreground border border-border">{submission.status}</span>
+          }
         </div>
       </div>
 
@@ -182,8 +188,8 @@ export default async function SubmissionDetailPage({
         </div>
       )}
 
-      {/* Assignment — only visible for BOOKED submissions */}
-      {submission.status === "BOOKED" && (
+      {/* Assignment — only visible for BOOKED submissions and editors/admins */}
+      {canWrite && submission.status === "BOOKED" && (
         <AssignmentPanel
           submissionId={submission.id}
           doctors={doctors.map((d) => ({
@@ -219,7 +225,7 @@ export default async function SubmissionDetailPage({
           )}
         </div>
         <div className="px-4 py-3 flex flex-col gap-3">
-          <NoteForm submissionId={submission.id} />
+          {canWrite && <NoteForm submissionId={submission.id} />}
           {submission.notes.length > 0 ? (
             <ul className="flex flex-col gap-2 mt-1">
               {submission.notes.map((n) => (
