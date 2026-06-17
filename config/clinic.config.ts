@@ -23,7 +23,7 @@ export const clinic = {
 
   contact: {
     phone: "+1-512-555-0142",
-    email: "hello@brightsmile-dental.com",
+    email: "frank@veilcode.studio",
     address: {
       street: "1204 Congress Ave",
       city: "Austin",
