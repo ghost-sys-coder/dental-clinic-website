@@ -35,7 +35,7 @@ const cormorant = Cormorant_Garamond({
 export async function generateMetadata(): Promise<Metadata> {
   const clinic = getClinic();
   return {
-    metadataBase: new URL("https://dental.veilcode.studio/"),
+    metadataBase: new URL("https://dental.veilcode.studio"),
     title: {
       template: `%s | ${clinic.meta.name}`,
       default: `${clinic.meta.name} — ${clinic.meta.tagline}`,

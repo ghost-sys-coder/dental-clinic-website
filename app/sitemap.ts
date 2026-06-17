@@ -3,7 +3,7 @@ import { getClinic } from '@/lib/useClinic';
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const clinic = getClinic();
-  const baseUrl = 'https://dental.veilcode.studio/'; // template placeholder
+  const baseUrl = 'https://dental.veilcode.studio'; // template placeholder
 
   const serviceUrls = clinic.services.map(service => ({
     url: `${baseUrl}/services/${service.slug}`,
