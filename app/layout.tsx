@@ -35,7 +35,7 @@ const cormorant = Cormorant_Garamond({
 export async function generateMetadata(): Promise<Metadata> {
   const clinic = getClinic();
   return {
-    metadataBase: new URL("https://brightsmile-dental.com"),
+    metadataBase: new URL("https://dental.veilcode.studio/"),
     title: {
       template: `%s | ${clinic.meta.name}`,
       default: `${clinic.meta.name} — ${clinic.meta.tagline}`,
@@ -73,10 +73,6 @@ export default function RootLayout({
     "--font-heading-active": `var(${theme.headingFontVar})`,
   };
 
-  const themeCSS = `:root {\n${Object.entries(cssVars)
-    .map(([k, v]) => `  ${k}: ${v};`)
-    .join("\n")}\n}`;
-
   const fontVariables = [
     geistSans.variable,
     geistMono.variable,
@@ -89,9 +85,9 @@ export default function RootLayout({
       lang="en"
       className={`${fontVariables} h-full antialiased`}
       data-theme-preset={clinic.brand.themePreset}
+      style={cssVars as React.CSSProperties}
     >
       <head>
-        <style dangerouslySetInnerHTML={{ __html: themeCSS }} />
         <JsonLd data={buildDentistSchema(clinic)} />
       </head>
       <body className="min-h-full flex flex-col">
