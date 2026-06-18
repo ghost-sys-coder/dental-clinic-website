@@ -10,13 +10,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Loader2, CalendarClock, ChevronDown } from "lucide-react";
+import { Loader2, CalendarClock, ChevronDown, AlertTriangle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface Doctor {
   id: string;
   name: string;
   title: string;
+}
+
+interface BlockConflict {
+  startsAt: string;
+  endsAt: string;
+  reason: string | null;
 }
 
 interface Props {
@@ -38,6 +44,17 @@ const DURATION_LABELS: Record<Duration, string> = {
   "90": "90 min",
   "120": "2 hours",
 };
+
+function fmtBlock(iso: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month:   "short",
+    day:     "numeric",
+    year:    "numeric",
+    hour:    "numeric",
+    minute:  "2-digit",
+  }).format(new Date(iso));
+}
 
 function toInputValues(isoStr: string) {
   const d = new Date(isoStr);
@@ -63,10 +80,15 @@ export default function RescheduleForm({
   const init                        = toInputValues(currentScheduledAt);
   const [date, setDate]             = useState(init.date);
   const [time, setTime]             = useState(init.time);
+  const [blockConflict, setBlockConflict] = useState<BlockConflict | null>(null);
   const [pending, startTransition]  = useTransition();
   const router                      = useRouter();
 
   if (!canWrite || isTerminal) return null;
+
+  function clearConflict() {
+    if (blockConflict) setBlockConflict(null);
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -80,13 +102,17 @@ export default function RescheduleForm({
       const result = await rescheduleAppointment(id, doctorId, newScheduledAt, { duration });
       if (result.error) {
         toast.error(result.error);
+        setBlockConflict((result as { blockConflict?: BlockConflict }).blockConflict ?? null);
       } else {
+        setBlockConflict(null);
         toast.success("Appointment rescheduled.");
         setOpen(false);
         router.refresh();
       }
     });
   }
+
+  const doctorName = doctors.find((d) => d.id === doctorId)?.name ?? "This doctor";
 
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
@@ -104,10 +130,32 @@ export default function RescheduleForm({
 
       {open && (
         <form onSubmit={handleSubmit} className="px-4 pb-4 flex flex-col gap-3 border-t border-border pt-3">
+
+          {/* Availability block conflict banner */}
+          {blockConflict && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2.5">
+              <AlertTriangle className="size-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex flex-col gap-0.5">
+                <p className="text-xs font-semibold text-amber-800">
+                  {doctorName} is unavailable during this period
+                </p>
+                <p className="text-xs text-amber-700">
+                  {fmtBlock(blockConflict.startsAt)} — {fmtBlock(blockConflict.endsAt)}
+                </p>
+                {blockConflict.reason && (
+                  <p className="text-xs text-amber-600 italic">{blockConflict.reason}</p>
+                )}
+                <p className="text-xs text-amber-600 mt-0.5">
+                  Please choose a different date, time, or doctor.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Doctor */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-foreground">Doctor</label>
-            <Select value={doctorId} onValueChange={setDoctorId}>
+            <Select value={doctorId} onValueChange={(v) => { setDoctorId(v); clearConflict(); }}>
               <SelectTrigger className="h-9 text-sm">
                 <SelectValue />
               </SelectTrigger>
@@ -129,7 +177,7 @@ export default function RescheduleForm({
               <input
                 type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => { setDate(e.target.value); clearConflict(); }}
                 min={new Date().toISOString().split("T")[0]}
                 className="flex h-9 w-full rounded-lg border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
               />
@@ -139,7 +187,7 @@ export default function RescheduleForm({
               <input
                 type="time"
                 value={time}
-                onChange={(e) => setTime(e.target.value)}
+                onChange={(e) => { setTime(e.target.value); clearConflict(); }}
                 className="flex h-9 w-full rounded-lg border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
               />
             </div>
@@ -148,7 +196,7 @@ export default function RescheduleForm({
           {/* Duration */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-foreground">Duration</label>
-            <Select value={duration} onValueChange={(v) => setDuration(v as Duration)}>
+            <Select value={duration} onValueChange={(v) => { setDuration(v as Duration); clearConflict(); }}>
               <SelectTrigger className="h-9 text-sm">
                 <SelectValue />
               </SelectTrigger>

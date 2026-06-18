@@ -25,6 +25,7 @@ import {
   lte,
   ne,
   lt,
+  gt,
   notInArray,
   type SQL,
 } from "drizzle-orm";
@@ -439,7 +440,7 @@ export async function assignSubmission(
     treatmentType?: string;
     roomOrChair?: string;
   },
-): Promise<{ error: string } | { error: null }> {
+): Promise<{ error: null } | { error: string; blockConflict?: { startsAt: string; endsAt: string; reason: string | null } }> {
   let user: Awaited<ReturnType<typeof requireRole>>["user"];
   try {
     ({ user } = await requireRole("EDITOR"));
@@ -490,6 +491,33 @@ export async function assignSubmission(
     return {
       error:
         "This doctor already has an overlapping appointment at that time. Please choose a different slot.",
+    };
+
+  // Check availability blocks — doctor is blocked during this window
+  const [blockConflict] = await db
+    .select({
+      reason:   availabilityBlocks.reason,
+      startsAt: availabilityBlocks.startsAt,
+      endsAt:   availabilityBlocks.endsAt,
+    })
+    .from(availabilityBlocks)
+    .where(
+      and(
+        eq(availabilityBlocks.teamMemberId, teamMemberId),
+        lt(availabilityBlocks.startsAt, newEnd),
+        gt(availabilityBlocks.endsAt, scheduledAt),
+      )
+    )
+    .limit(1);
+
+  if (blockConflict)
+    return {
+      error: "This doctor is unavailable during that time slot.",
+      blockConflict: {
+        startsAt: blockConflict.startsAt.toISOString(),
+        endsAt:   blockConflict.endsAt.toISOString(),
+        reason:   blockConflict.reason,
+      },
     };
 
   await db
@@ -660,7 +688,7 @@ export async function rescheduleAppointment(
     treatmentType?: string;
     roomOrChair?: string;
   },
-): Promise<{ error: string | null }> {
+): Promise<{ error: null } | { error: string; blockConflict?: { startsAt: string; endsAt: string; reason: string | null } }> {
   let user: Awaited<ReturnType<typeof requireRole>>["user"];
   try {
     ({ user } = await requireRole("EDITOR"));
@@ -716,6 +744,33 @@ export async function rescheduleAppointment(
     return {
       error:
         "That doctor already has an overlapping appointment. Please choose a different time.",
+    };
+
+  // Check availability blocks for the new doctor/time
+  const [rescheduleBlockConflict] = await db
+    .select({
+      reason:   availabilityBlocks.reason,
+      startsAt: availabilityBlocks.startsAt,
+      endsAt:   availabilityBlocks.endsAt,
+    })
+    .from(availabilityBlocks)
+    .where(
+      and(
+        eq(availabilityBlocks.teamMemberId, newDoctorId),
+        lt(availabilityBlocks.startsAt, newEnd),
+        gt(availabilityBlocks.endsAt, newScheduledAt),
+      )
+    )
+    .limit(1);
+
+  if (rescheduleBlockConflict)
+    return {
+      error: "That doctor is unavailable during that time slot.",
+      blockConflict: {
+        startsAt: rescheduleBlockConflict.startsAt.toISOString(),
+        endsAt:   rescheduleBlockConflict.endsAt.toISOString(),
+        reason:   rescheduleBlockConflict.reason,
+      },
     };
 
   const oldDetail = `${existing.teamMemberId}@${existing.scheduledAt.toISOString()}`;
