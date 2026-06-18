@@ -6,13 +6,28 @@
 
 -- ── 1. Enable RLS on every table ─────────────────────────────────────────────
 
-ALTER TABLE profiles      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE submissions   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE notes         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE audit_logs    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE team_members  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE submissions         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notes               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE team_members        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE assignments         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE availability_blocks ENABLE ROW LEVEL SECURITY;
 
--- ── 2. profiles ───────────────────────────────────────────────────────────────
+-- ── 2. Role helper ────────────────────────────────────────────────────────────
+-- Reads the calling user's role from profiles. SECURITY DEFINER so it bypasses
+-- RLS on profiles itself (avoids infinite recursion). Called inside every
+-- write-guarded policy below.
+
+CREATE OR REPLACE FUNCTION current_user_role()
+  RETURNS text
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = public
+AS $$
+  SELECT role::text FROM profiles WHERE id = auth.uid()
+$$;
+
+-- ── 3. profiles ───────────────────────────────────────────────────────────────
 -- Staff can read all profiles (needed to display note authors, audit actors).
 -- Each user can only insert/update their own row.
 
@@ -29,7 +44,7 @@ CREATE POLICY "profiles_insert" ON profiles
 CREATE POLICY "profiles_update" ON profiles
   FOR UPDATE TO authenticated USING (auth.uid() = id);
 
--- ── 3. submissions ────────────────────────────────────────────────────────────
+-- ── 4. submissions ────────────────────────────────────────────────────────────
 -- Only authenticated staff can read or write patient submissions.
 
 DROP POLICY IF EXISTS "submissions_all" ON submissions;
@@ -38,15 +53,29 @@ CREATE POLICY "submissions_all" ON submissions
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- ── 4. notes ─────────────────────────────────────────────────────────────────
--- Authenticated staff only.
+-- VIEWERs can read; EDITORs/ADMINs can add notes; only the author or an ADMIN
+-- can delete a note (no update — notes are immutable once written).
 
-DROP POLICY IF EXISTS "notes_all" ON notes;
+DROP POLICY IF EXISTS "notes_all"    ON notes;
+DROP POLICY IF EXISTS "notes_select" ON notes;
+DROP POLICY IF EXISTS "notes_write"  ON notes;
+DROP POLICY IF EXISTS "notes_delete" ON notes;
 
-CREATE POLICY "notes_all" ON notes
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "notes_select" ON notes
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "notes_write" ON notes
+  FOR INSERT TO authenticated
+  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
+
+CREATE POLICY "notes_delete" ON notes
+  FOR DELETE TO authenticated
+  USING (author_id = auth.uid() OR current_user_role() = 'ADMIN');
 
 -- ── 5. audit_logs ─────────────────────────────────────────────────────────────
--- Staff can read the full audit trail; they can insert but never update/delete.
+-- All staff can read the full audit trail.
+-- Only EDITORs/ADMINs can insert (VIEWERs can't perform write actions anyway).
+-- No UPDATE or DELETE policy → audit records are permanently immutable.
 
 DROP POLICY IF EXISTS "audit_logs_select" ON audit_logs;
 DROP POLICY IF EXISTS "audit_logs_insert" ON audit_logs;
@@ -55,7 +84,8 @@ CREATE POLICY "audit_logs_select" ON audit_logs
   FOR SELECT TO authenticated USING (true);
 
 CREATE POLICY "audit_logs_insert" ON audit_logs
-  FOR INSERT TO authenticated WITH CHECK (true);
+  FOR INSERT TO authenticated
+  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
 
 -- ── 6. team_members ───────────────────────────────────────────────────────────
 -- Authenticated staff can manage members.
@@ -71,24 +101,48 @@ CREATE POLICY "team_members_public_select" ON team_members
   FOR SELECT TO anon USING (true);
 
 -- ── 7. assignments ───────────────────────────────────────────────────────────
--- Authenticated staff can manage assignments; no public access.
+-- VIEWERs can read; EDITORs/ADMINs can insert and update.
+-- No DELETE policy — appointments are cancelled/rescheduled via status, never deleted.
 
-ALTER TABLE assignments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "assignments_all"    ON assignments;
+DROP POLICY IF EXISTS "assignments_select" ON assignments;
+DROP POLICY IF EXISTS "assignments_write"  ON assignments;
+DROP POLICY IF EXISTS "assignments_update" ON assignments;
 
-DROP POLICY IF EXISTS "assignments_all" ON assignments;
+CREATE POLICY "assignments_select" ON assignments
+  FOR SELECT TO authenticated USING (true);
 
-CREATE POLICY "assignments_all" ON assignments
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "assignments_write" ON assignments
+  FOR INSERT TO authenticated
+  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
+
+CREATE POLICY "assignments_update" ON assignments
+  FOR UPDATE TO authenticated
+  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
 
 -- ── 8. availability_blocks ───────────────────────────────────────────────────
--- Authenticated staff only; new columns on assignments inherit existing policy.
+-- VIEWERs can read; EDITORs/ADMINs can add, edit, and remove blocks.
 
-ALTER TABLE availability_blocks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "avail_blocks_all"    ON availability_blocks;
+DROP POLICY IF EXISTS "avail_blocks_select" ON availability_blocks;
+DROP POLICY IF EXISTS "avail_blocks_write"  ON availability_blocks;
+DROP POLICY IF EXISTS "avail_blocks_update" ON availability_blocks;
+DROP POLICY IF EXISTS "avail_blocks_delete" ON availability_blocks;
 
-DROP POLICY IF EXISTS "avail_blocks_all" ON availability_blocks;
+CREATE POLICY "avail_blocks_select" ON availability_blocks
+  FOR SELECT TO authenticated USING (true);
 
-CREATE POLICY "avail_blocks_all" ON availability_blocks
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "avail_blocks_write" ON availability_blocks
+  FOR INSERT TO authenticated
+  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
+
+CREATE POLICY "avail_blocks_update" ON availability_blocks
+  FOR UPDATE TO authenticated
+  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
+
+CREATE POLICY "avail_blocks_delete" ON availability_blocks
+  FOR DELETE TO authenticated
+  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
 
 -- ── 9. Storage — team-profile bucket ─────────────────────────────────────────
 -- Authenticated users can upload and delete their own files.

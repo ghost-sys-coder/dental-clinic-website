@@ -31,18 +31,30 @@ import {
 } from "drizzle-orm";
 import { notifyDoctorAssignment, sendStaffCredentials } from "@/lib/email";
 
-type SubmissionStatus = "NEW" | "CONTACTED" | "BOOKED" | "ARCHIVED";
+type SubmissionStatus =
+  | "NEW"
+  | "CONTACTED"
+  | "WAITING_FOR_RESPONSE"
+  | "BOOKED"
+  | "ATTENDED"
+  | "TREATMENT_PLANNED"
+  | "CONVERTED"
+  | "LOST"
+  | "ARCHIVED";
+
 type AppointmentStatus =
-  | "SCHEDULED"
+  | "REQUESTED"
   | "CONFIRMED"
-  | "IN_PROGRESS"
+  | "CHECKED_IN"
+  | "IN_TREATMENT"
   | "COMPLETED"
   | "NO_SHOW"
   | "CANCELLED"
   | "RESCHEDULED";
+
 type AppointmentDuration = "30" | "45" | "60" | "90" | "120";
 
-const TERMINAL_STATUSES: AppointmentStatus[] = ["COMPLETED", "NO_SHOW", "CANCELLED"];
+const TERMINAL_STATUSES: AppointmentStatus[] = ["COMPLETED", "NO_SHOW", "CANCELLED", "RESCHEDULED"];
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
@@ -399,7 +411,7 @@ export async function getDoctorUpcomingAssignments(teamMemberId: string) {
       and(
         eq(assignments.teamMemberId, teamMemberId),
         gte(assignments.scheduledAt, now),
-        notInArray(assignments.apptStatus, ["CANCELLED", "NO_SHOW"]),
+        notInArray(assignments.apptStatus, ["CANCELLED", "NO_SHOW", "RESCHEDULED"]),
       )
     )
     .orderBy(asc(assignments.scheduledAt));
@@ -426,7 +438,13 @@ export async function getAssignment(submissionId: string) {
     })
     .from(assignments)
     .innerJoin(teamMembers, eq(assignments.teamMemberId, teamMembers.id))
-    .where(eq(assignments.submissionId, submissionId))
+    .where(
+      and(
+        eq(assignments.submissionId, submissionId),
+        notInArray(assignments.apptStatus, ["RESCHEDULED", "CANCELLED"]),
+      )
+    )
+    .orderBy(desc(assignments.createdAt))
     .limit(1);
   return row ?? null;
 }
@@ -520,27 +538,41 @@ export async function assignSubmission(
       },
     };
 
-  await db
-    .insert(assignments)
-    .values({
+  // Upsert: update existing active assignment or insert a new one
+  const [existingAppt] = await db
+    .select({ id: assignments.id })
+    .from(assignments)
+    .where(
+      and(
+        eq(assignments.submissionId, submissionId),
+        notInArray(assignments.apptStatus, ["RESCHEDULED", "CANCELLED"]),
+      )
+    )
+    .orderBy(desc(assignments.createdAt))
+    .limit(1);
+
+  if (existingAppt) {
+    await db
+      .update(assignments)
+      .set({
+        teamMemberId,
+        scheduledAt,
+        duration,
+        treatmentType: options?.treatmentType ?? null,
+        roomOrChair: options?.roomOrChair ?? null,
+      })
+      .where(eq(assignments.id, existingAppt.id));
+  } else {
+    await db.insert(assignments).values({
       submissionId,
       teamMemberId,
       scheduledAt,
       duration,
       treatmentType: options?.treatmentType ?? null,
       roomOrChair: options?.roomOrChair ?? null,
-    })
-    .onConflictDoUpdate({
-      target: assignments.submissionId,
-      set: {
-        teamMemberId,
-        scheduledAt,
-        duration,
-        treatmentType: options?.treatmentType ?? null,
-        roomOrChair: options?.roomOrChair ?? null,
-        apptStatus: "SCHEDULED",
-      },
+      apptStatus: "REQUESTED",
     });
+  }
 
   await db.insert(auditLogs).values({
     submissionId,
@@ -688,7 +720,7 @@ export async function rescheduleAppointment(
     treatmentType?: string;
     roomOrChair?: string;
   },
-): Promise<{ error: null } | { error: string; blockConflict?: { startsAt: string; endsAt: string; reason: string | null } }> {
+): Promise<{ error: null; newId: string } | { error: string; blockConflict?: { startsAt: string; endsAt: string; reason: string | null } }> {
   let user: Awaited<ReturnType<typeof requireRole>>["user"];
   try {
     ({ user } = await requireRole("EDITOR"));
@@ -776,18 +808,26 @@ export async function rescheduleAppointment(
   const oldDetail = `${existing.teamMemberId}@${existing.scheduledAt.toISOString()}`;
   const newDetail = `${newDoctorId}@${newScheduledAt.toISOString()} (${duration} min)`;
 
+  // Mark old appointment as RESCHEDULED (preserve history)
   await db
     .update(assignments)
-    .set({
+    .set({ apptStatus: "RESCHEDULED" })
+    .where(eq(assignments.id, id));
+
+  // Create new appointment record for the new slot
+  const [newAppt] = await db
+    .insert(assignments)
+    .values({
+      submissionId: existing.submissionId,
       teamMemberId: newDoctorId,
       scheduledAt: newScheduledAt,
-      apptStatus: "SCHEDULED",
+      apptStatus: "CONFIRMED",
       duration,
       treatmentType: options?.treatmentType ?? null,
       roomOrChair: options?.roomOrChair ?? null,
-      cancellationReason: null,
+      rescheduledFromId: id,
     })
-    .where(eq(assignments.id, id));
+    .returning({ id: assignments.id });
 
   await db.insert(auditLogs).values({
     submissionId: existing.submissionId,
@@ -807,8 +847,9 @@ export async function rescheduleAppointment(
   }
 
   revalidatePath(`/admin/appointments/${id}`);
+  revalidatePath(`/admin/appointments/${newAppt.id}`);
   revalidatePath("/admin/appointments");
-  return { error: null };
+  return { error: null, newId: newAppt.id };
 }
 
 // ── Appointment details update ────────────────────────────────────────────────
@@ -871,7 +912,7 @@ export async function getWeekAppointments(weekStart: Date) {
         and(
           gte(assignments.scheduledAt, weekStart),
           lt(assignments.scheduledAt, weekEnd),
-          notInArray(assignments.apptStatus, ["CANCELLED", "NO_SHOW"]),
+          notInArray(assignments.apptStatus, ["CANCELLED", "NO_SHOW", "RESCHEDULED"]),
         )
       )
       .orderBy(asc(assignments.scheduledAt)),

@@ -2,21 +2,46 @@ import { listSubmissions } from "../actions";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Search, Inbox } from "lucide-react";
 
-const STATUSES = ["NEW", "CONTACTED", "BOOKED", "ARCHIVED"] as const;
+const STATUSES = [
+  "NEW", "CONTACTED", "WAITING_FOR_RESPONSE", "BOOKED",
+  "ATTENDED", "TREATMENT_PLANNED", "CONVERTED", "LOST", "ARCHIVED",
+] as const;
 type Status = typeof STATUSES[number];
 
+const STATUS_LABEL: Record<Status, string> = {
+  NEW:                  "New",
+  CONTACTED:            "Contacted",
+  WAITING_FOR_RESPONSE: "Waiting for Response",
+  BOOKED:               "Booked",
+  ATTENDED:             "Attended",
+  TREATMENT_PLANNED:    "Treatment Planned",
+  CONVERTED:            "Converted",
+  LOST:                 "Lost",
+  ARCHIVED:             "Archived",
+};
+
 const STATUS_COLOR: Record<Status, string> = {
-  NEW: "bg-blue-50 text-blue-700 border-blue-200",
-  CONTACTED: "bg-yellow-50 text-yellow-700 border-yellow-200",
-  BOOKED: "bg-green-50 text-green-700 border-green-200",
-  ARCHIVED: "bg-gray-50 text-gray-600 border-gray-200",
+  NEW:                  "bg-blue-50 text-blue-700 border-blue-200",
+  CONTACTED:            "bg-yellow-50 text-yellow-700 border-yellow-200",
+  WAITING_FOR_RESPONSE: "bg-orange-50 text-orange-700 border-orange-200",
+  BOOKED:               "bg-green-50 text-green-700 border-green-200",
+  ATTENDED:             "bg-teal-50 text-teal-700 border-teal-200",
+  TREATMENT_PLANNED:    "bg-purple-50 text-purple-700 border-purple-200",
+  CONVERTED:            "bg-emerald-50 text-emerald-700 border-emerald-200",
+  LOST:                 "bg-red-50 text-red-700 border-red-200",
+  ARCHIVED:             "bg-gray-50 text-gray-600 border-gray-200",
 };
 
 const STATUS_ROW_ACCENT: Record<Status, string> = {
-  NEW: "border-l-blue-400",
-  CONTACTED: "border-l-yellow-400",
-  BOOKED: "border-l-green-400",
-  ARCHIVED: "border-l-gray-300",
+  NEW:                  "border-l-blue-400",
+  CONTACTED:            "border-l-yellow-400",
+  WAITING_FOR_RESPONSE: "border-l-orange-400",
+  BOOKED:               "border-l-green-400",
+  ATTENDED:             "border-l-teal-400",
+  TREATMENT_PLANNED:    "border-l-purple-400",
+  CONVERTED:            "border-l-emerald-400",
+  LOST:                 "border-l-red-400",
+  ARCHIVED:             "border-l-gray-300",
 };
 
 function formatDate(d: Date) {
@@ -80,7 +105,7 @@ export default async function SubmissionsPage({
           {(["", ...STATUSES] as const).map((s) => {
             const isAll = s === "";
             const isActive = isAll ? !status : status === s;
-            const label = isAll ? "All" : s.charAt(0) + s.slice(1).toLowerCase();
+            const label = isAll ? "All" : STATUS_LABEL[s];
             const href = isAll
               ? buildUrl({ status: undefined, page: "1" })
               : buildUrl({ status: s, page: "1" });
@@ -126,7 +151,7 @@ export default async function SubmissionsPage({
               {rows.map((r) => (
                 <tr
                   key={r.id}
-                  className={`border-l-2 hover:bg-muted/30 transition-colors ${STATUS_ROW_ACCENT[r.status]}`}
+                  className={`border-l-2 hover:bg-muted/30 transition-colors ${STATUS_ROW_ACCENT[r.status as Status] ?? "border-l-border"}`}
                 >
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2.5">
@@ -147,9 +172,9 @@ export default async function SubmissionsPage({
                   </td>
                   <td className="px-3 py-2.5">
                     <span
-                      className={`text-xs font-medium px-2 py-0.5 rounded-full border ${STATUS_COLOR[r.status]}`}
+                      className={`text-xs font-medium px-2 py-0.5 rounded-full border ${STATUS_COLOR[r.status as Status] ?? "bg-muted text-muted-foreground border-border"}`}
                     >
-                      {r.status.charAt(0) + r.status.slice(1).toLowerCase()}
+                      {STATUS_LABEL[r.status as Status] ?? r.status}
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-muted-foreground text-xs whitespace-nowrap">

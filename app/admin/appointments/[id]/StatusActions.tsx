@@ -4,7 +4,7 @@ import { useTransition } from "react";
 import { updateAppointmentStatus, markNoShow } from "../../actions";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, CheckCircle2, PlayCircle, BadgeCheck, UserX } from "lucide-react";
+import { Loader2, CheckCircle2, LogIn, PlayCircle, BadgeCheck, UserX } from "lucide-react";
 
 interface Props {
   id: string;
@@ -17,15 +17,10 @@ const ACTIONS: Record<
   string,
   { label: string; nextStatus: string; icon: React.ElementType; cls: string }[]
 > = {
-  SCHEDULED: [
-    { label: "Confirm",   nextStatus: "CONFIRMED",   icon: CheckCircle2, cls: "bg-indigo-600 text-white hover:bg-indigo-700" },
-  ],
-  CONFIRMED: [
-    { label: "Check In",  nextStatus: "IN_PROGRESS", icon: PlayCircle,   cls: "bg-yellow-500 text-white hover:bg-yellow-600" },
-  ],
-  IN_PROGRESS: [
-    { label: "Complete",  nextStatus: "COMPLETED",   icon: BadgeCheck,   cls: "bg-green-600 text-white hover:bg-green-700" },
-  ],
+  REQUESTED:    [{ label: "Confirm",         nextStatus: "CONFIRMED",     icon: CheckCircle2, cls: "bg-indigo-600 text-white hover:bg-indigo-700" }],
+  CONFIRMED:    [{ label: "Check In",        nextStatus: "CHECKED_IN",    icon: LogIn,        cls: "bg-cyan-600 text-white hover:bg-cyan-700" }],
+  CHECKED_IN:   [{ label: "Start Treatment", nextStatus: "IN_TREATMENT",  icon: PlayCircle,   cls: "bg-yellow-500 text-white hover:bg-yellow-600" }],
+  IN_TREATMENT: [{ label: "Complete",        nextStatus: "COMPLETED",     icon: BadgeCheck,   cls: "bg-green-600 text-white hover:bg-green-700" }],
 };
 
 export default function StatusActions({ id, apptStatus, isPast, canWrite }: Props) {
@@ -35,7 +30,8 @@ export default function StatusActions({ id, apptStatus, isPast, canWrite }: Prop
   if (!canWrite) return null;
 
   const primaryActions = ACTIONS[apptStatus] ?? [];
-  const showNoShow = isPast && ["SCHEDULED", "CONFIRMED"].includes(apptStatus);
+  // No Show only applies when patient never arrived (before check-in)
+  const showNoShow = isPast && ["REQUESTED", "CONFIRMED"].includes(apptStatus);
 
   if (primaryActions.length === 0 && !showNoShow) return null;
 
@@ -48,7 +44,7 @@ export default function StatusActions({ id, apptStatus, isPast, canWrite }: Prop
       if (result.error) {
         toast.error(result.error);
       } else {
-        toast.success(`Status updated to ${nextStatus.replace("_", " ").toLowerCase()}`);
+        toast.success(`Marked as ${nextStatus.replace(/_/g, " ").toLowerCase()}`);
         router.refresh();
       }
     });

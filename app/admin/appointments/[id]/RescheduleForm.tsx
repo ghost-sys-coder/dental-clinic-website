@@ -107,7 +107,7 @@ export default function RescheduleForm({
         setBlockConflict(null);
         toast.success("Appointment rescheduled.");
         setOpen(false);
-        router.refresh();
+        router.push(`/admin/appointments/${(result as { newId: string }).newId}`);
       }
     });
   }

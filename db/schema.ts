@@ -13,13 +13,24 @@ import { relations } from "drizzle-orm";
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
 export const submissionType = pgEnum("submission_type", ["APPOINTMENT", "CONTACT"]);
-export const submissionStatus = pgEnum("submission_status", ["NEW", "CONTACTED", "BOOKED", "ARCHIVED"]);
+export const submissionStatus = pgEnum("submission_status", [
+  "NEW",
+  "CONTACTED",
+  "WAITING_FOR_RESPONSE",
+  "BOOKED",
+  "ATTENDED",
+  "TREATMENT_PLANNED",
+  "CONVERTED",
+  "LOST",
+  "ARCHIVED",
+]);
 export const roleEnum = pgEnum("role", ["ADMIN", "EDITOR", "VIEWER"]);
 
 export const appointmentStatus = pgEnum("appointment_status", [
-  "SCHEDULED",
+  "REQUESTED",
   "CONFIRMED",
-  "IN_PROGRESS",
+  "CHECKED_IN",
+  "IN_TREATMENT",
   "COMPLETED",
   "NO_SHOW",
   "CANCELLED",
@@ -98,14 +109,14 @@ export const teamMembers = pgTable("team_members", {
 export const assignments = pgTable("assignments", {
   // ── existing columns ─────────────────────────────────────────────────────
   id: uuid("id").primaryKey().defaultRandom(),
-  submissionId: uuid("submission_id").notNull().unique().references(() => submissions.id, { onDelete: "cascade" }),
+  submissionId: uuid("submission_id").notNull().references(() => submissions.id, { onDelete: "cascade" }),
   teamMemberId: uuid("team_member_id").notNull().references(() => teamMembers.id, { onDelete: "cascade" }),
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
   reminderSentAt: timestamp("reminder_sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 
   // ── appointment-management columns ───────────────────────────────────────
-  apptStatus: appointmentStatus("appt_status").notNull().default("SCHEDULED"),
+  apptStatus: appointmentStatus("appt_status").notNull().default("REQUESTED"),
   duration: appointmentDuration("duration").notNull().default("60"),
   treatmentType: text("treatment_type"),
   roomOrChair: text("room_or_chair"),
@@ -118,6 +129,7 @@ export const assignments = pgTable("assignments", {
   ),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (t) => [
+  index("assignments_submission_idx").on(t.submissionId),
   index("assignments_team_member_idx").on(t.teamMemberId),
   index("assignments_scheduled_at_idx").on(t.scheduledAt),
   index("assignments_appt_status_idx").on(t.apptStatus),
