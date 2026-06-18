@@ -13,8 +13,9 @@ import {
   FileText,
   Inbox,
 } from "lucide-react";
-import { getTeamMember, getDoctorUpcomingAssignments } from "@/app/admin/actions";
+import { getTeamMember, getDoctorUpcomingAssignments, listAvailabilityBlocks } from "@/app/admin/actions";
 import { getSessionRole } from "@/lib/auth";
+import AvailabilityBlockPanel from "./AvailabilityBlockPanel";
 
 export async function generateMetadata({
   params,
@@ -54,9 +55,10 @@ export default async function DoctorProfilePage({
 }) {
   const { id } = await params;
 
-  const [member, upcoming, userRole] = await Promise.all([
+  const [member, upcoming, availBlocks, userRole] = await Promise.all([
     getTeamMember(id),
     getDoctorUpcomingAssignments(id),
+    listAvailabilityBlocks({ doctorId: id }),
     getSessionRole(),
   ]);
 
@@ -236,6 +238,17 @@ export default async function DoctorProfilePage({
           </ul>
         )}
       </div>
+      {/* Availability blocks */}
+      <AvailabilityBlockPanel
+        doctorId={member.id}
+        initialBlocks={availBlocks.map((b) => ({
+          id: b.id,
+          startsAt: b.startsAt.toISOString(),
+          endsAt: b.endsAt.toISOString(),
+          reason: b.reason,
+        }))}
+        canWrite={canWrite}
+      />
     </div>
   );
 }

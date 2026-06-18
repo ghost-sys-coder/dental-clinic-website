@@ -26,7 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { LayoutDashboard, Inbox, Settings, LogOut, Loader2, ArrowUpLeft, Users } from "lucide-react";
+import { LayoutDashboard, Inbox, Settings, LogOut, Loader2, ArrowUpLeft, Users, CalendarDays } from "lucide-react";
 
 const ROLE_LABEL: Record<Role, string> = {
   ADMIN: "Admin",
@@ -42,9 +42,10 @@ const ROLE_BADGE: Record<Role, string> = {
 
 const ALL_NAV = [
   { href: "/admin",             label: "Dashboard",   icon: LayoutDashboard, exact: true,  minRole: "VIEWER"  },
-  { href: "/admin/submissions", label: "Submissions", icon: Inbox,           exact: false, minRole: "VIEWER"  },
-  { href: "/admin/team",        label: "Team",        icon: Users,           exact: false, minRole: "VIEWER"  },
-  { href: "/admin/settings",    label: "Settings",    icon: Settings,        exact: false, minRole: "EDITOR"  },
+  { href: "/admin/submissions",   label: "Submissions",   icon: Inbox,        exact: false, minRole: "VIEWER"  },
+  { href: "/admin/appointments", label: "Appointments",  icon: CalendarDays, exact: false, minRole: "VIEWER"  },
+  { href: "/admin/team",         label: "Team",          icon: Users,        exact: false, minRole: "VIEWER"  },
+  { href: "/admin/settings",     label: "Settings",      icon: Settings,     exact: false, minRole: "EDITOR"  },
 ] as const;
 
 const HIERARCHY: Record<Role, number> = { VIEWER: 0, EDITOR: 1, ADMIN: 2 };

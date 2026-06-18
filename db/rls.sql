@@ -80,7 +80,17 @@ DROP POLICY IF EXISTS "assignments_all" ON assignments;
 CREATE POLICY "assignments_all" ON assignments
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
--- ── 8. Storage — team-profile bucket ─────────────────────────────────────────
+-- ── 8. availability_blocks ───────────────────────────────────────────────────
+-- Authenticated staff only; new columns on assignments inherit existing policy.
+
+ALTER TABLE availability_blocks ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "avail_blocks_all" ON availability_blocks;
+
+CREATE POLICY "avail_blocks_all" ON availability_blocks
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- ── 9. Storage — team-profile bucket ─────────────────────────────────────────
 -- Authenticated users can upload and delete their own files.
 -- Anyone (including the public website) can read the images.
 
