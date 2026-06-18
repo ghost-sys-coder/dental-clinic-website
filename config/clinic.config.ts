@@ -61,7 +61,7 @@ export const clinic = {
       "Award-winning dental care in the heart of Austin. We combine advanced technology with a gentle touch so every visit feels comfortable, efficient, and worthwhile.",
     image: "/assets/hero-section-image.png",
     badges: [
-      "20+ years experience",
+      "15+ years experience",
       "5-star rated",
       "Accepting new patients",
     ],
@@ -201,7 +201,7 @@ export const clinic = {
   whyUs: {
     title: "Why Patients Choose Brightsmile",
     subtitle:
-      "We've spent over 15 years earning the trust of Austin families through consistent, compassionate, and cutting-edge dental care.",
+      "We've spent over 15+ years earning the trust of Austin families through consistent, compassionate, and cutting-edge dental care.",
     differentiators: [
       {
         icon: "Clock",
