@@ -2,13 +2,46 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { submissions, notes, auditLogs, profiles, teamMembers, assignments } from "@/db/schema";
+import {
+  submissions,
+  notes,
+  auditLogs,
+  profiles,
+  teamMembers,
+  assignments,
+  availabilityBlocks,
+} from "@/db/schema";
 import { requireUser, requireRole, type Role } from "@/lib/auth";
 import { supabaseAdmin } from "@/utils/supabase/admin";
-import { eq, ilike, or, count, desc, asc, and, gte, lte, ne, type SQL } from "drizzle-orm";
+import {
+  eq,
+  ilike,
+  or,
+  count,
+  desc,
+  asc,
+  and,
+  gte,
+  lte,
+  ne,
+  lt,
+  notInArray,
+  type SQL,
+} from "drizzle-orm";
 import { notifyDoctorAssignment, sendStaffCredentials } from "@/lib/email";
 
 type SubmissionStatus = "NEW" | "CONTACTED" | "BOOKED" | "ARCHIVED";
+type AppointmentStatus =
+  | "SCHEDULED"
+  | "CONFIRMED"
+  | "IN_PROGRESS"
+  | "COMPLETED"
+  | "NO_SHOW"
+  | "CANCELLED"
+  | "RESCHEDULED";
+type AppointmentDuration = "30" | "45" | "60" | "90" | "120";
+
+const TERMINAL_STATUSES: AppointmentStatus[] = ["COMPLETED", "NO_SHOW", "CANCELLED"];
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
@@ -214,7 +247,6 @@ export async function inviteUser(
 
   if (error) return { error: error.message };
 
-  // Seed profile immediately so the role is correct from first login
   if (data.user) {
     await db.insert(profiles).values({
       id: data.user.id,
@@ -352,6 +384,8 @@ export async function getDoctorUpcomingAssignments(teamMemberId: string) {
       id: assignments.id,
       scheduledAt: assignments.scheduledAt,
       submissionId: assignments.submissionId,
+      apptStatus: assignments.apptStatus,
+      duration: assignments.duration,
       patientName: submissions.fullName,
       service: submissions.service,
       phone: submissions.phone,
@@ -364,6 +398,7 @@ export async function getDoctorUpcomingAssignments(teamMemberId: string) {
       and(
         eq(assignments.teamMemberId, teamMemberId),
         gte(assignments.scheduledAt, now),
+        notInArray(assignments.apptStatus, ["CANCELLED", "NO_SHOW"]),
       )
     )
     .orderBy(asc(assignments.scheduledAt));
@@ -379,6 +414,10 @@ export async function getAssignment(submissionId: string) {
       submissionId: assignments.submissionId,
       teamMemberId: assignments.teamMemberId,
       scheduledAt: assignments.scheduledAt,
+      apptStatus: assignments.apptStatus,
+      duration: assignments.duration,
+      treatmentType: assignments.treatmentType,
+      roomOrChair: assignments.roomOrChair,
       createdAt: assignments.createdAt,
       doctorName: teamMembers.name,
       doctorTitle: teamMembers.title,
@@ -395,6 +434,11 @@ export async function assignSubmission(
   submissionId: string,
   teamMemberId: string,
   scheduledAt: Date,
+  options?: {
+    duration?: AppointmentDuration;
+    treatmentType?: string;
+    roomOrChair?: string;
+  },
 ): Promise<{ error: string } | { error: null }> {
   let user: Awaited<ReturnType<typeof requireRole>>["user"];
   try {
@@ -413,46 +457,70 @@ export async function assignSubmission(
   if (submission.status !== "BOOKED")
     return { error: "Only BOOKED submissions can be assigned." };
 
-  // 30-minute collision window, excluding re-assignment of the same submission
-  const windowMs = 30 * 60 * 1000;
-  const lower = new Date(scheduledAt.getTime() - windowMs);
-  const upper = new Date(scheduledAt.getTime() + windowMs);
+  const duration = options?.duration ?? "60";
+  const durationMs = parseInt(duration) * 60 * 1000;
+  const newEnd = new Date(scheduledAt.getTime() + durationMs);
 
-  const conflicts = await db
-    .select({ id: assignments.id })
+  // Fetch candidates that could overlap (window = new slot + max existing duration of 120 min)
+  const candidates = await db
+    .select({
+      id: assignments.id,
+      scheduledAt: assignments.scheduledAt,
+      duration: assignments.duration,
+    })
     .from(assignments)
     .where(
       and(
         eq(assignments.teamMemberId, teamMemberId),
-        gte(assignments.scheduledAt, lower),
-        lte(assignments.scheduledAt, upper),
         ne(assignments.submissionId, submissionId),
+        notInArray(assignments.apptStatus, ["CANCELLED", "RESCHEDULED", "NO_SHOW"]),
+        gte(assignments.scheduledAt, new Date(scheduledAt.getTime() - 120 * 60 * 1000)),
+        lt(assignments.scheduledAt, newEnd),
       )
-    )
-    .limit(1);
+    );
 
-  if (conflicts.length > 0)
+  const hasConflict = candidates.some((c) => {
+    const existingEnd = new Date(
+      c.scheduledAt.getTime() + parseInt(c.duration) * 60 * 1000
+    );
+    return c.scheduledAt < newEnd && existingEnd > scheduledAt;
+  });
+
+  if (hasConflict)
     return {
       error:
-        "This doctor already has an appointment within 30 minutes of that time. Please choose a different slot.",
+        "This doctor already has an overlapping appointment at that time. Please choose a different slot.",
     };
 
   await db
     .insert(assignments)
-    .values({ submissionId, teamMemberId, scheduledAt })
+    .values({
+      submissionId,
+      teamMemberId,
+      scheduledAt,
+      duration,
+      treatmentType: options?.treatmentType ?? null,
+      roomOrChair: options?.roomOrChair ?? null,
+    })
     .onConflictDoUpdate({
       target: assignments.submissionId,
-      set: { teamMemberId, scheduledAt },
+      set: {
+        teamMemberId,
+        scheduledAt,
+        duration,
+        treatmentType: options?.treatmentType ?? null,
+        roomOrChair: options?.roomOrChair ?? null,
+        apptStatus: "SCHEDULED",
+      },
     });
 
   await db.insert(auditLogs).values({
     submissionId,
     actorId: user.id,
     action: "ASSIGNED",
-    detail: `Scheduled for ${scheduledAt.toISOString()}`,
+    detail: `Scheduled for ${scheduledAt.toISOString()} (${duration} min)`,
   });
 
-  // Email the doctor — fire and forget, never block the action
   const [doctor] = await db
     .select({ email: teamMembers.email, name: teamMembers.name })
     .from(teamMembers)
@@ -464,5 +532,386 @@ export async function assignSubmission(
   }
 
   revalidatePath(`/admin/submissions/${submissionId}`);
+  return { error: null };
+}
+
+// ── Submission notes (for appointment detail page) ────────────────────────────
+
+export async function listNotesBySubmission(submissionId: string) {
+  await requireUser();
+  return db
+    .select({
+      id: notes.id,
+      body: notes.body,
+      createdAt: notes.createdAt,
+      authorName: profiles.fullName,
+      authorEmail: profiles.email,
+    })
+    .from(notes)
+    .leftJoin(profiles, eq(notes.authorId, profiles.id))
+    .where(eq(notes.submissionId, submissionId))
+    .orderBy(desc(notes.createdAt));
+}
+
+// ── Appointment detail ────────────────────────────────────────────────────────
+
+export async function getAppointmentDetail(id: string) {
+  await requireUser();
+  const [row] = await db
+    .select({
+      id: assignments.id,
+      submissionId: assignments.submissionId,
+      teamMemberId: assignments.teamMemberId,
+      scheduledAt: assignments.scheduledAt,
+      apptStatus: assignments.apptStatus,
+      duration: assignments.duration,
+      treatmentType: assignments.treatmentType,
+      roomOrChair: assignments.roomOrChair,
+      cancellationReason: assignments.cancellationReason,
+      followUpDate: assignments.followUpDate,
+      rescheduledFromId: assignments.rescheduledFromId,
+      createdAt: assignments.createdAt,
+      updatedAt: assignments.updatedAt,
+      doctorName: teamMembers.name,
+      doctorTitle: teamMembers.title,
+      doctorPhoto: teamMembers.photo,
+      doctorEmail: teamMembers.email,
+      patientName: submissions.fullName,
+      patientEmail: submissions.email,
+      patientPhone: submissions.phone,
+      service: submissions.service,
+      submissionStatus: submissions.status,
+      preferredDate: submissions.preferredDate,
+      message: submissions.message,
+    })
+    .from(assignments)
+    .innerJoin(teamMembers, eq(assignments.teamMemberId, teamMembers.id))
+    .innerJoin(submissions, eq(assignments.submissionId, submissions.id))
+    .where(eq(assignments.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+// ── Appointment status ────────────────────────────────────────────────────────
+
+export async function updateAppointmentStatus(
+  id: string,
+  status: AppointmentStatus,
+  opts?: { cancellationReason?: string },
+): Promise<{ error: string | null }> {
+  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  try {
+    ({ user } = await requireRole("EDITOR"));
+  } catch {
+    return { error: "You don't have permission to update appointments." };
+  }
+
+  const [existing] = await db
+    .select({ apptStatus: assignments.apptStatus, submissionId: assignments.submissionId })
+    .from(assignments)
+    .where(eq(assignments.id, id))
+    .limit(1);
+
+  if (!existing) return { error: "Appointment not found." };
+  if (TERMINAL_STATUSES.includes(existing.apptStatus as AppointmentStatus))
+    return { error: `Appointment is already ${existing.apptStatus} and cannot be changed.` };
+
+  await db
+    .update(assignments)
+    .set({
+      apptStatus: status,
+      ...(status === "CANCELLED" && opts?.cancellationReason
+        ? { cancellationReason: opts.cancellationReason }
+        : {}),
+    })
+    .where(eq(assignments.id, id));
+
+  await db.insert(auditLogs).values({
+    submissionId: existing.submissionId,
+    actorId: user.id,
+    action: "APPT_STATUS_CHANGE",
+    detail: `${existing.apptStatus} -> ${status}${opts?.cancellationReason ? `: ${opts.cancellationReason}` : ""}`,
+  });
+
+  revalidatePath(`/admin/appointments/${id}`);
+  revalidatePath("/admin/appointments");
+  return { error: null };
+}
+
+export async function markNoShow(id: string): Promise<{ error: string | null }> {
+  return updateAppointmentStatus(id, "NO_SHOW");
+}
+
+export async function cancelAppointment(
+  id: string,
+  reason?: string,
+): Promise<{ error: string | null }> {
+  return updateAppointmentStatus(id, "CANCELLED", { cancellationReason: reason });
+}
+
+// ── Reschedule ────────────────────────────────────────────────────────────────
+
+export async function rescheduleAppointment(
+  id: string,
+  newDoctorId: string,
+  newScheduledAt: Date,
+  options?: {
+    duration?: AppointmentDuration;
+    treatmentType?: string;
+    roomOrChair?: string;
+  },
+): Promise<{ error: string | null }> {
+  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  try {
+    ({ user } = await requireRole("EDITOR"));
+  } catch {
+    return { error: "You don't have permission to reschedule appointments." };
+  }
+
+  const [existing] = await db
+    .select({
+      submissionId: assignments.submissionId,
+      scheduledAt: assignments.scheduledAt,
+      teamMemberId: assignments.teamMemberId,
+      apptStatus: assignments.apptStatus,
+    })
+    .from(assignments)
+    .where(eq(assignments.id, id))
+    .limit(1);
+
+  if (!existing) return { error: "Appointment not found." };
+  if (TERMINAL_STATUSES.includes(existing.apptStatus as AppointmentStatus))
+    return { error: `Appointment is ${existing.apptStatus} and cannot be rescheduled.` };
+
+  const duration = options?.duration ?? "60";
+  const durationMs = parseInt(duration) * 60 * 1000;
+  const newEnd = new Date(newScheduledAt.getTime() + durationMs);
+
+  // Collision check for the new doctor/time, excluding this submission's slot
+  const candidates = await db
+    .select({
+      id: assignments.id,
+      scheduledAt: assignments.scheduledAt,
+      duration: assignments.duration,
+    })
+    .from(assignments)
+    .where(
+      and(
+        eq(assignments.teamMemberId, newDoctorId),
+        ne(assignments.submissionId, existing.submissionId),
+        notInArray(assignments.apptStatus, ["CANCELLED", "RESCHEDULED", "NO_SHOW"]),
+        gte(assignments.scheduledAt, new Date(newScheduledAt.getTime() - 120 * 60 * 1000)),
+        lt(assignments.scheduledAt, newEnd),
+      )
+    );
+
+  const hasConflict = candidates.some((c) => {
+    const existingEnd = new Date(
+      c.scheduledAt.getTime() + parseInt(c.duration) * 60 * 1000
+    );
+    return c.scheduledAt < newEnd && existingEnd > newScheduledAt;
+  });
+
+  if (hasConflict)
+    return {
+      error:
+        "That doctor already has an overlapping appointment. Please choose a different time.",
+    };
+
+  const oldDetail = `${existing.teamMemberId}@${existing.scheduledAt.toISOString()}`;
+  const newDetail = `${newDoctorId}@${newScheduledAt.toISOString()} (${duration} min)`;
+
+  await db
+    .update(assignments)
+    .set({
+      teamMemberId: newDoctorId,
+      scheduledAt: newScheduledAt,
+      apptStatus: "SCHEDULED",
+      duration,
+      treatmentType: options?.treatmentType ?? null,
+      roomOrChair: options?.roomOrChair ?? null,
+      cancellationReason: null,
+    })
+    .where(eq(assignments.id, id));
+
+  await db.insert(auditLogs).values({
+    submissionId: existing.submissionId,
+    actorId: user.id,
+    action: "RESCHEDULED",
+    detail: `${oldDetail} -> ${newDetail}`,
+  });
+
+  const [doctor] = await db
+    .select({ email: teamMembers.email, name: teamMembers.name })
+    .from(teamMembers)
+    .where(eq(teamMembers.id, newDoctorId))
+    .limit(1);
+
+  if (doctor?.email) {
+    notifyDoctorAssignment(doctor.email, doctor.name, newScheduledAt).catch(() => {});
+  }
+
+  revalidatePath(`/admin/appointments/${id}`);
+  revalidatePath("/admin/appointments");
+  return { error: null };
+}
+
+// ── Appointment details update ────────────────────────────────────────────────
+
+export async function updateAppointmentDetails(
+  id: string,
+  data: {
+    duration?: AppointmentDuration;
+    treatmentType?: string | null;
+    roomOrChair?: string | null;
+    followUpDate?: string | null;
+  },
+): Promise<{ error: string | null }> {
+  try {
+    await requireRole("EDITOR");
+  } catch {
+    return { error: "You don't have permission to update appointments." };
+  }
+
+  await db
+    .update(assignments)
+    .set({
+      ...(data.duration !== undefined ? { duration: data.duration } : {}),
+      ...(data.treatmentType !== undefined ? { treatmentType: data.treatmentType } : {}),
+      ...(data.roomOrChair !== undefined ? { roomOrChair: data.roomOrChair } : {}),
+      ...(data.followUpDate !== undefined ? { followUpDate: data.followUpDate } : {}),
+    })
+    .where(eq(assignments.id, id));
+
+  revalidatePath(`/admin/appointments/${id}`);
+  return { error: null };
+}
+
+// ── Week calendar ─────────────────────────────────────────────────────────────
+
+export async function getWeekAppointments(weekStart: Date) {
+  await requireUser();
+
+  const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const [appts, blocks] = await Promise.all([
+    db
+      .select({
+        id: assignments.id,
+        submissionId: assignments.submissionId,
+        teamMemberId: assignments.teamMemberId,
+        scheduledAt: assignments.scheduledAt,
+        apptStatus: assignments.apptStatus,
+        duration: assignments.duration,
+        treatmentType: assignments.treatmentType,
+        roomOrChair: assignments.roomOrChair,
+        doctorName: teamMembers.name,
+        patientName: submissions.fullName,
+        service: submissions.service,
+      })
+      .from(assignments)
+      .innerJoin(teamMembers, eq(assignments.teamMemberId, teamMembers.id))
+      .innerJoin(submissions, eq(assignments.submissionId, submissions.id))
+      .where(
+        and(
+          gte(assignments.scheduledAt, weekStart),
+          lt(assignments.scheduledAt, weekEnd),
+          notInArray(assignments.apptStatus, ["CANCELLED", "NO_SHOW"]),
+        )
+      )
+      .orderBy(asc(assignments.scheduledAt)),
+
+    db
+      .select({
+        id: availabilityBlocks.id,
+        teamMemberId: availabilityBlocks.teamMemberId,
+        startsAt: availabilityBlocks.startsAt,
+        endsAt: availabilityBlocks.endsAt,
+        reason: availabilityBlocks.reason,
+        doctorName: teamMembers.name,
+      })
+      .from(availabilityBlocks)
+      .innerJoin(teamMembers, eq(availabilityBlocks.teamMemberId, teamMembers.id))
+      .where(
+        and(
+          lt(availabilityBlocks.startsAt, weekEnd),
+          gte(availabilityBlocks.endsAt, weekStart),
+        )
+      )
+      .orderBy(asc(availabilityBlocks.startsAt)),
+  ]);
+
+  return { appointments: appts, blocks };
+}
+
+// ── Availability blocks ───────────────────────────────────────────────────────
+
+export async function listAvailabilityBlocks(opts?: {
+  doctorId?: string;
+  from?: Date;
+  to?: Date;
+}) {
+  await requireUser();
+
+  const filters: SQL[] = [];
+  if (opts?.doctorId) filters.push(eq(availabilityBlocks.teamMemberId, opts.doctorId));
+  if (opts?.from) filters.push(gte(availabilityBlocks.endsAt, opts.from));
+  if (opts?.to) filters.push(lte(availabilityBlocks.startsAt, opts.to));
+
+  const where = filters.length > 0 ? and(...filters) : undefined;
+
+  return db
+    .select({
+      id: availabilityBlocks.id,
+      teamMemberId: availabilityBlocks.teamMemberId,
+      startsAt: availabilityBlocks.startsAt,
+      endsAt: availabilityBlocks.endsAt,
+      reason: availabilityBlocks.reason,
+      createdAt: availabilityBlocks.createdAt,
+    })
+    .from(availabilityBlocks)
+    .where(where)
+    .orderBy(asc(availabilityBlocks.startsAt));
+}
+
+export async function createAvailabilityBlock(
+  doctorId: string,
+  startsAt: Date,
+  endsAt: Date,
+  reason?: string,
+): Promise<{ error: string | null }> {
+  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  try {
+    ({ user } = await requireRole("EDITOR"));
+  } catch {
+    return { error: "You don't have permission to manage availability." };
+  }
+
+  if (endsAt <= startsAt)
+    return { error: "End time must be after start time." };
+
+  await db.insert(availabilityBlocks).values({
+    teamMemberId: doctorId,
+    startsAt,
+    endsAt,
+    reason: reason ?? null,
+    createdBy: user.id,
+  });
+
+  revalidatePath("/admin/appointments");
+  revalidatePath(`/admin/team/${doctorId}`);
+  return { error: null };
+}
+
+export async function deleteAvailabilityBlock(id: string): Promise<{ error: string | null }> {
+  try {
+    await requireRole("EDITOR");
+  } catch {
+    return { error: "You don't have permission to manage availability." };
+  }
+
+  await db.delete(availabilityBlocks).where(eq(availabilityBlocks.id, id));
+
+  revalidatePath("/admin/appointments");
   return { error: null };
 }

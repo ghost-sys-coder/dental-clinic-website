@@ -1,9 +1,36 @@
-import { pgTable, pgEnum, text, uuid, timestamp, index, integer } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  pgEnum,
+  text,
+  uuid,
+  timestamp,
+  index,
+  integer,
+  type AnyPgColumn,
+} from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
+
+// ── Enums ─────────────────────────────────────────────────────────────────────
 
 export const submissionType = pgEnum("submission_type", ["APPOINTMENT", "CONTACT"]);
 export const submissionStatus = pgEnum("submission_status", ["NEW", "CONTACTED", "BOOKED", "ARCHIVED"]);
 export const roleEnum = pgEnum("role", ["ADMIN", "EDITOR", "VIEWER"]);
+
+export const appointmentStatus = pgEnum("appointment_status", [
+  "SCHEDULED",
+  "CONFIRMED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "NO_SHOW",
+  "CANCELLED",
+  "RESCHEDULED",
+]);
+
+export const appointmentDuration = pgEnum("appointment_duration", [
+  "30", "45", "60", "90", "120",
+]);
+
+// ── Tables ────────────────────────────────────────────────────────────────────
 
 export const profiles = pgTable("profiles", {
   id: uuid("id").primaryKey(),
@@ -69,16 +96,48 @@ export const teamMembers = pgTable("team_members", {
 });
 
 export const assignments = pgTable("assignments", {
+  // ── existing columns ─────────────────────────────────────────────────────
   id: uuid("id").primaryKey().defaultRandom(),
   submissionId: uuid("submission_id").notNull().unique().references(() => submissions.id, { onDelete: "cascade" }),
   teamMemberId: uuid("team_member_id").notNull().references(() => teamMembers.id, { onDelete: "cascade" }),
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
   reminderSentAt: timestamp("reminder_sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+
+  // ── appointment-management columns ───────────────────────────────────────
+  apptStatus: appointmentStatus("appt_status").notNull().default("SCHEDULED"),
+  duration: appointmentDuration("duration").notNull().default("60"),
+  treatmentType: text("treatment_type"),
+  roomOrChair: text("room_or_chair"),
+  cancellationReason: text("cancellation_reason"),
+  followUpDate: text("follow_up_date"),
+  // Self-ref FK uses callback form to avoid circular reference at declaration time
+  rescheduledFromId: uuid("rescheduled_from_id").references(
+    (): AnyPgColumn => assignments.id,
+    { onDelete: "set null" }
+  ),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (t) => [
   index("assignments_team_member_idx").on(t.teamMemberId),
   index("assignments_scheduled_at_idx").on(t.scheduledAt),
+  index("assignments_appt_status_idx").on(t.apptStatus),
+  index("assignments_scheduled_at_status_idx").on(t.scheduledAt, t.apptStatus),
 ]);
+
+export const availabilityBlocks = pgTable("availability_blocks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  teamMemberId: uuid("team_member_id").notNull().references(() => teamMembers.id, { onDelete: "cascade" }),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  reason: text("reason"),
+  createdBy: uuid("created_by").notNull().references(() => profiles.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("avail_blocks_team_member_idx").on(t.teamMemberId),
+  index("avail_blocks_starts_at_idx").on(t.startsAt),
+]);
+
+// ── Relations ─────────────────────────────────────────────────────────────────
 
 export const submissionsRelations = relations(submissions, ({ many }) => ({
   notes: many(notes),
@@ -98,8 +157,19 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
 export const assignmentsRelations = relations(assignments, ({ one }) => ({
   submission: one(submissions, { fields: [assignments.submissionId], references: [submissions.id] }),
   teamMember: one(teamMembers, { fields: [assignments.teamMemberId], references: [teamMembers.id] }),
+  rescheduledFrom: one(assignments, {
+    fields: [assignments.rescheduledFromId],
+    references: [assignments.id],
+    relationName: "reschedule_chain",
+  }),
 }));
 
 export const teamMembersRelations = relations(teamMembers, ({ many }) => ({
   assignments: many(assignments),
+  availabilityBlocks: many(availabilityBlocks),
+}));
+
+export const availabilityBlocksRelations = relations(availabilityBlocks, ({ one }) => ({
+  teamMember: one(teamMembers, { fields: [availabilityBlocks.teamMemberId], references: [teamMembers.id] }),
+  createdByProfile: one(profiles, { fields: [availabilityBlocks.createdBy], references: [profiles.id] }),
 }));

@@ -205,6 +205,9 @@ export default async function SubmissionDetailPage({
                   scheduledAt: assignment.scheduledAt,
                   doctorName: assignment.doctorName,
                   doctorTitle: assignment.doctorTitle,
+                  duration: assignment.duration,
+                  treatmentType: assignment.treatmentType,
+                  roomOrChair: assignment.roomOrChair,
                 }
               : null
           }

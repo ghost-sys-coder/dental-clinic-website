@@ -24,6 +24,9 @@ interface ExistingAssignment {
   scheduledAt: Date;
   doctorName: string;
   doctorTitle: string;
+  duration: string;
+  treatmentType: string | null;
+  roomOrChair: string | null;
 }
 
 interface Props {
@@ -31,6 +34,16 @@ interface Props {
   doctors: Doctor[];
   existing: ExistingAssignment | null;
 }
+
+type Duration = "30" | "45" | "60" | "90" | "120";
+
+const DURATION_LABELS: Record<Duration, string> = {
+  "30": "30 min",
+  "45": "45 min",
+  "60": "60 min",
+  "90": "90 min",
+  "120": "2 hours",
+};
 
 function toLocalDateTimeInputs(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -43,10 +56,13 @@ function toLocalDateTimeInputs(d: Date) {
 export default function AssignmentPanel({ submissionId, doctors, existing }: Props) {
   const existingInputs = existing ? toLocalDateTimeInputs(existing.scheduledAt) : null;
 
-  const [doctorId, setDoctorId] = useState(existing?.teamMemberId ?? "");
-  const [date, setDate] = useState(existingInputs?.date ?? "");
-  const [time, setTime] = useState(existingInputs?.time ?? "");
-  const [pending, startTransition] = useTransition();
+  const [doctorId, setDoctorId]           = useState(existing?.teamMemberId ?? "");
+  const [date, setDate]                   = useState(existingInputs?.date ?? "");
+  const [time, setTime]                   = useState(existingInputs?.time ?? "");
+  const [duration, setDuration]           = useState<Duration>((existing?.duration as Duration) ?? "60");
+  const [treatmentType, setTreatmentType] = useState(existing?.treatmentType ?? "");
+  const [roomOrChair, setRoomOrChair]     = useState(existing?.roomOrChair ?? "");
+  const [pending, startTransition]        = useTransition();
 
   const isReassign = !!existing;
 
@@ -64,7 +80,11 @@ export default function AssignmentPanel({ submissionId, doctors, existing }: Pro
     }
 
     startTransition(async () => {
-      const result = await assignSubmission(submissionId, doctorId, scheduledAt);
+      const result = await assignSubmission(submissionId, doctorId, scheduledAt, {
+        duration,
+        treatmentType: treatmentType.trim() || undefined,
+        roomOrChair: roomOrChair.trim() || undefined,
+      });
       if (result.error) {
         toast.error(result.error);
       } else {
@@ -100,6 +120,8 @@ export default function AssignmentPanel({ submissionId, doctors, existing }: Pro
             {existing.scheduledAt.toLocaleTimeString("en-US", {
               hour: "numeric", minute: "2-digit",
             })}
+            {" · "}
+            {DURATION_LABELS[existing.duration as Duration] ?? `${existing.duration} min`}
           </p>
         </div>
       )}
@@ -123,7 +145,7 @@ export default function AssignmentPanel({ submissionId, doctors, existing }: Pro
           </Select>
         </div>
 
-        {/* Date + time */}
+        {/* Date + time + duration */}
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="assign-date" className="text-xs font-medium text-foreground">
@@ -152,9 +174,50 @@ export default function AssignmentPanel({ submissionId, doctors, existing }: Pro
           </div>
         </div>
 
-        <p className="text-[10px] text-muted-foreground">
-          Doctors must have at least 30 minutes between appointments.
-        </p>
+        {/* Duration */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-foreground">Duration</label>
+          <Select value={duration} onValueChange={(v) => setDuration(v as Duration)}>
+            <SelectTrigger className="h-9 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.entries(DURATION_LABELS) as [Duration, string][]).map(([val, label]) => (
+                <SelectItem key={val} value={val}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Treatment type + room */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="assign-treatment" className="text-xs font-medium text-foreground">
+              Treatment Type <span className="text-muted-foreground font-normal">(optional)</span>
+            </label>
+            <input
+              id="assign-treatment"
+              type="text"
+              value={treatmentType}
+              onChange={(e) => setTreatmentType(e.target.value)}
+              placeholder="e.g. Cleaning"
+              className="flex h-9 w-full rounded-lg border border-input bg-card px-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="assign-room" className="text-xs font-medium text-foreground">
+              Room / Chair <span className="text-muted-foreground font-normal">(optional)</span>
+            </label>
+            <input
+              id="assign-room"
+              type="text"
+              value={roomOrChair}
+              onChange={(e) => setRoomOrChair(e.target.value)}
+              placeholder="e.g. Chair 1"
+              className="flex h-9 w-full rounded-lg border border-input bg-card px-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+            />
+          </div>
+        </div>
 
         <button
           type="submit"
