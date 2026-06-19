@@ -5,6 +5,7 @@ import { getSessionRole } from "@/lib/auth";
 import StatusControl from "./StatusControl";
 import NoteForm from "./NoteForm";
 import AssignmentPanel from "./AssignmentPanel";
+import PatientLinkPanel from "@/components/admin/PatientLinkPanel";
 import {
   ChevronLeft,
   Mail,
@@ -32,10 +33,12 @@ function initials(name: string) {
 }
 
 const ACTION_DOT: Record<string, string> = {
-  VIEW: "bg-muted-foreground/40",
-  STATUS_CHANGE: "bg-primary",
-  NOTE_ADD: "bg-green-500",
-  EXPORT: "bg-yellow-500",
+  VIEW:           "bg-muted-foreground/40",
+  STATUS_CHANGE:  "bg-primary",
+  NOTE_ADD:       "bg-green-500",
+  EXPORT:         "bg-yellow-500",
+  PATIENT_LINKED: "bg-blue-500",
+  PATIENT_UNLINKED: "bg-orange-400",
 };
 
 export default async function SubmissionDetailPage({
@@ -84,6 +87,21 @@ export default async function SubmissionDetailPage({
           }
         </div>
       </div>
+
+      {/* Patient link */}
+      <PatientLinkPanel
+        submissionId={submission.id}
+        linkedPatient={submission.patient
+          ? {
+              id:       submission.patient.id,
+              fullName: submission.patient.fullName,
+              email:    submission.patient.email,
+              status:   submission.patient.status,
+            }
+          : null
+        }
+        canWrite={canWrite}
+      />
 
       {/* Two-column info */}
       <div className="grid md:grid-cols-2 gap-3">

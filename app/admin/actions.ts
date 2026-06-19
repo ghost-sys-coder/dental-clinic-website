@@ -302,6 +302,7 @@ export async function getSubmission(id: string) {
   const submission = await db.query.submissions.findFirst({
     where: eq(submissions.id, id),
     with: {
+      patient: true,
       notes: {
         with: { author: true },
         orderBy: [desc(notes.createdAt)],
@@ -1184,4 +1185,147 @@ export async function deleteAvailabilityBlock(id: string): Promise<{ error: stri
 
   revalidatePath("/admin/appointments");
   return { error: null };
+}
+
+// ── Patient ↔ Submission linking ──────────────────────────────────────────────
+
+export async function searchPatients(query: string) {
+  await requireUser();
+
+  if (!query.trim()) return [];
+
+  return db
+    .select({
+      id: patients.id,
+      fullName: patients.fullName,
+      email: patients.email,
+      phone: patients.phone,
+      status: patients.status,
+    })
+    .from(patients)
+    .where(
+      or(
+        ilike(patients.fullName, `%${query}%`),
+        ilike(patients.email, `%${query}%`),
+        ilike(patients.phone, `%${query}%`),
+      )!
+    )
+    .orderBy(asc(patients.fullName))
+    .limit(10);
+}
+
+export async function convertSubmissionToPatient(submissionId: string) {
+  const { user } = await requireRole("EDITOR");
+
+  const [sub] = await db
+    .select({
+      fullName: submissions.fullName,
+      email: submissions.email,
+      phone: submissions.phone,
+      patientId: submissions.patientId,
+    })
+    .from(submissions)
+    .where(eq(submissions.id, submissionId))
+    .limit(1);
+
+  if (!sub) throw new Error("Submission not found.");
+  if (sub.patientId) throw new Error("This submission is already linked to a patient.");
+
+  const [newPatient] = await db
+    .insert(patients)
+    .values({
+      fullName: sub.fullName,
+      email: sub.email,
+      phone: sub.phone,
+      status: "NEW",
+    })
+    .returning({ id: patients.id });
+
+  await db
+    .update(submissions)
+    .set({ patientId: newPatient.id })
+    .where(eq(submissions.id, submissionId));
+
+  await db.insert(auditLogs).values({
+    submissionId,
+    actorId: user.id,
+    action: "PATIENT_LINKED",
+    detail: `Created patient ${newPatient.id} from submission`,
+  });
+
+  revalidatePath(`/admin/submissions/${submissionId}`);
+  revalidatePath("/admin/patients");
+  return { patientId: newPatient.id };
+}
+
+export async function linkSubmissionToPatient(submissionId: string, patientId: string) {
+  const { user } = await requireRole("EDITOR");
+
+  const [sub] = await db
+    .select({ patientId: submissions.patientId })
+    .from(submissions)
+    .where(eq(submissions.id, submissionId))
+    .limit(1);
+
+  if (!sub) throw new Error("Submission not found.");
+  if (sub.patientId) throw new Error("This submission is already linked to a patient. Unlink it first.");
+
+  await db
+    .update(submissions)
+    .set({ patientId })
+    .where(eq(submissions.id, submissionId));
+
+  await db.insert(auditLogs).values({
+    submissionId,
+    actorId: user.id,
+    action: "PATIENT_LINKED",
+    detail: `Linked to existing patient ${patientId}`,
+  });
+
+  revalidatePath(`/admin/submissions/${submissionId}`);
+}
+
+export async function unlinkSubmissionFromPatient(submissionId: string) {
+  const { user } = await requireRole("EDITOR");
+
+  const [sub] = await db
+    .select({ patientId: submissions.patientId })
+    .from(submissions)
+    .where(eq(submissions.id, submissionId))
+    .limit(1);
+
+  if (!sub) throw new Error("Submission not found.");
+
+  await db
+    .update(submissions)
+    .set({ patientId: null })
+    .where(eq(submissions.id, submissionId));
+
+  await db.insert(auditLogs).values({
+    submissionId,
+    actorId: user.id,
+    action: "PATIENT_UNLINKED",
+    detail: `Unlinked from patient ${sub.patientId ?? "unknown"}`,
+  });
+
+  revalidatePath(`/admin/submissions/${submissionId}`);
+}
+
+export async function listPatientSubmissions(patientId: string) {
+  await requireUser();
+
+  return db
+    .select({
+      id: submissions.id,
+      fullName: submissions.fullName,
+      email: submissions.email,
+      phone: submissions.phone,
+      service: submissions.service,
+      status: submissions.status,
+      type: submissions.type,
+      createdAt: submissions.createdAt,
+    })
+    .from(submissions)
+    .where(eq(submissions.patientId, patientId))
+    .orderBy(desc(submissions.createdAt));
 }
