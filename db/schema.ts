@@ -6,6 +6,8 @@ import {
   timestamp,
   index,
   integer,
+  boolean,
+  primaryKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -185,6 +187,30 @@ export const availabilityBlocks = pgTable("availability_blocks", {
   index("avail_blocks_starts_at_idx").on(t.startsAt),
 ]);
 
+export const services = pgTable("services", {
+  id:               uuid("id").primaryKey().defaultRandom(),
+  slug:             text("slug").notNull().unique(),
+  name:             text("name").notNull(),
+  icon:             text("icon"),
+  shortDescription: text("short_description").notNull().default(""),
+  longDescription:  text("long_description"),
+  image:            text("image"),
+  displayOrder:     integer("display_order").notNull().default(0),
+  isActive:         boolean("is_active").notNull().default(true),
+  createdAt:        timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:        timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+}, (t) => [
+  index("services_slug_idx").on(t.slug),
+  index("services_display_order_idx").on(t.displayOrder),
+]);
+
+export const serviceDoctors = pgTable("service_doctors", {
+  serviceId:    uuid("service_id").notNull().references(() => services.id, { onDelete: "cascade" }),
+  teamMemberId: uuid("team_member_id").notNull().references(() => teamMembers.id, { onDelete: "cascade" }),
+}, (t) => [
+  primaryKey({ columns: [t.serviceId, t.teamMemberId] }),
+]);
+
 // ── Relations ─────────────────────────────────────────────────────────────────
 
 export const submissionsRelations = relations(submissions, ({ one, many }) => ({
@@ -221,9 +247,19 @@ export const assignmentsRelations = relations(assignments, ({ one }) => ({
 export const teamMembersRelations = relations(teamMembers, ({ many }) => ({
   assignments: many(assignments),
   availabilityBlocks: many(availabilityBlocks),
+  services: many(serviceDoctors),
 }));
 
 export const availabilityBlocksRelations = relations(availabilityBlocks, ({ one }) => ({
   teamMember: one(teamMembers, { fields: [availabilityBlocks.teamMemberId], references: [teamMembers.id] }),
   createdByProfile: one(profiles, { fields: [availabilityBlocks.createdBy], references: [profiles.id] }),
+}));
+
+export const servicesRelations = relations(services, ({ many }) => ({
+  doctors: many(serviceDoctors),
+}));
+
+export const serviceDoctorsRelations = relations(serviceDoctors, ({ one }) => ({
+  service:    one(services,     { fields: [serviceDoctors.serviceId],    references: [services.id] }),
+  teamMember: one(teamMembers,  { fields: [serviceDoctors.teamMemberId], references: [teamMembers.id] }),
 }));

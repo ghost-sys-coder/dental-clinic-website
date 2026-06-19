@@ -38,6 +38,7 @@ import {
   ExternalLink,
   HeartPulse,
   UserRound,
+  Stethoscope,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -74,8 +75,9 @@ const NAV_GROUPS = [
   {
     label: "Management",
     items: [
-      { href: "/admin/team",        label: "Team",         icon: Users,       exact: false, minRole: "VIEWER" },
-      { href: "/admin/settings",    label: "Settings",     icon: Settings,    exact: false, minRole: "EDITOR" },
+      { href: "/admin/team",        label: "Team",         icon: Users,        exact: false, minRole: "VIEWER" },
+      { href: "/admin/services",    label: "Services",     icon: Stethoscope,  exact: false, minRole: "VIEWER" },
+      { href: "/admin/settings",    label: "Settings",     icon: Settings,     exact: false, minRole: "EDITOR" },
     ],
   },
 ] as const;

@@ -188,3 +188,79 @@ CREATE POLICY "team_profile_update" ON storage.objects
 CREATE POLICY "team_profile_delete" ON storage.objects
   FOR DELETE TO authenticated
   USING (bucket_id = 'team-profile');
+
+-- ── 11. Enable RLS for services tables ───────────────────────────────────────
+
+ALTER TABLE services        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE service_doctors ENABLE ROW LEVEL SECURITY;
+
+-- ── 12. services ─────────────────────────────────────────────────────────────
+-- Authenticated staff can read; EDITORs/ADMINs can create, edit, delete.
+-- Anon can read active services (public website).
+
+DROP POLICY IF EXISTS "services_select"        ON services;
+DROP POLICY IF EXISTS "services_public_select"  ON services;
+DROP POLICY IF EXISTS "services_write"          ON services;
+DROP POLICY IF EXISTS "services_update"         ON services;
+DROP POLICY IF EXISTS "services_delete"         ON services;
+
+CREATE POLICY "services_select" ON services
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "services_public_select" ON services
+  FOR SELECT TO anon USING (is_active = true);
+
+CREATE POLICY "services_write" ON services
+  FOR INSERT TO authenticated
+  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
+
+CREATE POLICY "services_update" ON services
+  FOR UPDATE TO authenticated
+  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
+
+CREATE POLICY "services_delete" ON services
+  FOR DELETE TO authenticated
+  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
+
+-- ── 13. service_doctors ──────────────────────────────────────────────────────
+
+DROP POLICY IF EXISTS "service_doctors_select" ON service_doctors;
+DROP POLICY IF EXISTS "service_doctors_write"  ON service_doctors;
+DROP POLICY IF EXISTS "service_doctors_delete" ON service_doctors;
+
+CREATE POLICY "service_doctors_select" ON service_doctors
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "service_doctors_public_select" ON service_doctors
+  FOR SELECT TO anon USING (true);
+
+CREATE POLICY "service_doctors_write" ON service_doctors
+  FOR INSERT TO authenticated
+  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
+
+CREATE POLICY "service_doctors_delete" ON service_doctors
+  FOR DELETE TO authenticated
+  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
+
+-- ── 14. Storage — clinic-services bucket ─────────────────────────────────────
+
+DROP POLICY IF EXISTS "clinic_services_insert" ON storage.objects;
+DROP POLICY IF EXISTS "clinic_services_select" ON storage.objects;
+DROP POLICY IF EXISTS "clinic_services_update" ON storage.objects;
+DROP POLICY IF EXISTS "clinic_services_delete" ON storage.objects;
+
+CREATE POLICY "clinic_services_insert" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'clinic-services');
+
+CREATE POLICY "clinic_services_select" ON storage.objects
+  FOR SELECT TO public
+  USING (bucket_id = 'clinic-services');
+
+CREATE POLICY "clinic_services_update" ON storage.objects
+  FOR UPDATE TO authenticated
+  USING (bucket_id = 'clinic-services');
+
+CREATE POLICY "clinic_services_delete" ON storage.objects
+  FOR DELETE TO authenticated
+  USING (bucket_id = 'clinic-services');

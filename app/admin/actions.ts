@@ -11,6 +11,8 @@ import {
   assignments,
   availabilityBlocks,
   patients,
+  services,
+  serviceDoctors,
 } from "@/db/schema";
 import { requireUser, requireRole, type Role } from "@/lib/auth";
 import { supabaseAdmin } from "@/utils/supabase/admin";
@@ -1185,6 +1187,132 @@ export async function deleteAvailabilityBlock(id: string): Promise<{ error: stri
 
   revalidatePath("/admin/appointments");
   return { error: null };
+}
+
+// ── Services ──────────────────────────────────────────────────────────────────
+
+export async function listServices() {
+  await requireUser();
+
+  const [rows, doctorCounts] = await Promise.all([
+    db
+      .select({
+        id:               services.id,
+        slug:             services.slug,
+        name:             services.name,
+        icon:             services.icon,
+        shortDescription: services.shortDescription,
+        image:            services.image,
+        displayOrder:     services.displayOrder,
+        isActive:         services.isActive,
+        createdAt:        services.createdAt,
+      })
+      .from(services)
+      .orderBy(asc(services.displayOrder), asc(services.name)),
+
+    db
+      .select({ serviceId: serviceDoctors.serviceId, count: count() })
+      .from(serviceDoctors)
+      .groupBy(serviceDoctors.serviceId),
+  ]);
+
+  const countMap = Object.fromEntries(doctorCounts.map((r) => [r.serviceId, r.count]));
+  return rows.map((r) => ({ ...r, doctorCount: countMap[r.id] ?? 0 }));
+}
+
+export async function getService(id: string) {
+  await requireUser();
+
+  const [row] = await db.select().from(services).where(eq(services.id, id)).limit(1);
+  if (!row) return null;
+
+  const doctorRows = await db
+    .select({ teamMemberId: serviceDoctors.teamMemberId })
+    .from(serviceDoctors)
+    .where(eq(serviceDoctors.serviceId, id));
+
+  return { ...row, doctorIds: doctorRows.map((r) => r.teamMemberId) };
+}
+
+export async function createService(data: {
+  slug: string;
+  name: string;
+  icon?: string | null;
+  shortDescription: string;
+  longDescription?: string | null;
+  image?: string | null;
+  displayOrder?: number;
+  isActive?: boolean;
+  doctorIds?: string[];
+}) {
+  await requireRole("EDITOR");
+
+  const [row] = await db
+    .insert(services)
+    .values({
+      slug:             data.slug,
+      name:             data.name,
+      icon:             data.icon ?? null,
+      shortDescription: data.shortDescription,
+      longDescription:  data.longDescription ?? null,
+      image:            data.image ?? null,
+      displayOrder:     data.displayOrder ?? 0,
+      isActive:         data.isActive ?? true,
+    })
+    .returning({ id: services.id });
+
+  if (data.doctorIds?.length) {
+    await db.insert(serviceDoctors).values(
+      data.doctorIds.map((tmId) => ({ serviceId: row.id, teamMemberId: tmId }))
+    );
+  }
+
+  revalidatePath("/admin/services");
+  revalidatePath("/services");
+  return { id: row.id };
+}
+
+export async function updateService(
+  id: string,
+  data: {
+    slug?: string;
+    name?: string;
+    icon?: string | null;
+    shortDescription?: string;
+    longDescription?: string | null;
+    image?: string | null;
+    displayOrder?: number;
+    isActive?: boolean;
+    doctorIds?: string[];
+  }
+) {
+  await requireRole("EDITOR");
+
+  const { doctorIds, ...fields } = data;
+
+  if (Object.keys(fields).length > 0) {
+    await db.update(services).set(fields).where(eq(services.id, id));
+  }
+
+  if (doctorIds !== undefined) {
+    await db.delete(serviceDoctors).where(eq(serviceDoctors.serviceId, id));
+    if (doctorIds.length > 0) {
+      await db.insert(serviceDoctors).values(
+        doctorIds.map((tmId) => ({ serviceId: id, teamMemberId: tmId }))
+      );
+    }
+  }
+
+  revalidatePath("/admin/services");
+  revalidatePath(`/admin/services/${id}`);
+  revalidatePath("/services");
+}
+
+export async function deleteService(id: string) {
+  await requireRole("EDITOR");
+  await db.delete(services).where(eq(services.id, id));
+  revalidatePath("/admin/services");
+  revalidatePath("/services");
 }
 
 // ── Patient ↔ Submission linking ──────────────────────────────────────────────
