@@ -88,10 +88,12 @@ export default async function PatientsPage({
           <h1 className="font-heading font-bold text-xl text-foreground">Patients</h1>
           <p className="text-sm text-muted-foreground mt-0.5">{total} total</p>
         </div>
-        {/* Add patient button — wired up when detail page exists */}
-        <button className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
+        <Link
+          href="/admin/patients/new"
+          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors flex items-center"
+        >
           + Add Patient
-        </button>
+        </Link>
       </div>
 
       {/* Filters */}

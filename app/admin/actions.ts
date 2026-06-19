@@ -203,6 +203,97 @@ export async function listPatients({
   return { rows, total, page, pageSize: PAGE_SIZE };
 }
 
+// ── Patient detail / create / update ─────────────────────────────────────────
+
+type Gender = "MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY";
+
+export async function getPatient(id: string) {
+  await requireUser();
+
+  const [row] = await db
+    .select({
+      id:                 patients.id,
+      fullName:           patients.fullName,
+      email:              patients.email,
+      phone:              patients.phone,
+      dateOfBirth:        patients.dateOfBirth,
+      gender:             patients.gender,
+      address:            patients.address,
+      emergencyContact:   patients.emergencyContact,
+      medicalAlerts:      patients.medicalAlerts,
+      allergies:          patients.allergies,
+      insuranceProvider:  patients.insuranceProvider,
+      preferredDoctorId:  patients.preferredDoctorId,
+      status:             patients.status,
+      createdAt:          patients.createdAt,
+      updatedAt:          patients.updatedAt,
+    })
+    .from(patients)
+    .where(eq(patients.id, id));
+
+  return row ?? null;
+}
+
+export async function createPatient(data: {
+  fullName: string;
+  email: string;
+  phone: string;
+  dateOfBirth?: string | null;
+  gender?: Gender | null;
+  address?: string | null;
+  emergencyContact?: string | null;
+  medicalAlerts?: string[];
+  allergies?: string[];
+  insuranceProvider?: string | null;
+  preferredDoctorId?: string | null;
+  status?: PatientStatus;
+}) {
+  await requireRole("EDITOR");
+
+  const [row] = await db.insert(patients).values({
+    fullName:          data.fullName,
+    email:             data.email,
+    phone:             data.phone,
+    dateOfBirth:       data.dateOfBirth ?? null,
+    gender:            data.gender ?? null,
+    address:           data.address ?? null,
+    emergencyContact:  data.emergencyContact ?? null,
+    medicalAlerts:     data.medicalAlerts ?? [],
+    allergies:         data.allergies ?? [],
+    insuranceProvider: data.insuranceProvider ?? null,
+    preferredDoctorId: data.preferredDoctorId ?? null,
+    status:            data.status ?? "NEW",
+  }).returning({ id: patients.id });
+
+  revalidatePath("/admin/patients");
+  return { id: row.id };
+}
+
+export async function updatePatient(
+  id: string,
+  data: {
+    fullName?: string;
+    email?: string;
+    phone?: string;
+    dateOfBirth?: string | null;
+    gender?: Gender | null;
+    address?: string | null;
+    emergencyContact?: string | null;
+    medicalAlerts?: string[];
+    allergies?: string[];
+    insuranceProvider?: string | null;
+    preferredDoctorId?: string | null;
+    status?: PatientStatus;
+  }
+) {
+  await requireRole("EDITOR");
+
+  await db.update(patients).set(data).where(eq(patients.id, id));
+
+  revalidatePath("/admin/patients");
+  revalidatePath(`/admin/patients/${id}`);
+}
+
 // ── Submission detail ─────────────────────────────────────────────────────────
 
 export async function getSubmission(id: string) {
