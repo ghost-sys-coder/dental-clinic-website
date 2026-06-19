@@ -23,7 +23,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     <TooltipProvider>
       <SidebarProvider>
         <AdminSidebar clinicName={clinic.meta.name} userName={displayName} userRole={userRole} />
-        <SidebarInset>
+        <SidebarInset className="min-w-0 overflow-x-hidden">
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mr-2 h-4" />
@@ -31,7 +31,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
               {clinic.meta.name} — Admin
             </span>
           </header>
-          <div className="flex flex-1 flex-col gap-4 p-4 lg:p-6">
+          <div className="flex flex-1 flex-col gap-4 p-4 lg:p-6 min-w-0">
             {children}
           </div>
         </SidebarInset>

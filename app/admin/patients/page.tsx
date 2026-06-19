@@ -80,7 +80,7 @@ export default async function PatientsPage({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 min-w-0">
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -135,14 +135,14 @@ export default async function PatientsPage({
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <div className="rounded-xl border border-border bg-card shadow-sm overflow-x-auto min-w-0">
         {rows.length === 0 ? (
           <div className="py-16 text-center">
             <UserRound className="size-8 text-muted-foreground/40 mx-auto mb-2" />
             <p className="text-sm text-muted-foreground">No patients found.</p>
           </div>
         ) : (
-          <Table>
+          <Table className="min-w-[1100px]">
             <TableHeader>
               <TableRow className="bg-muted/40 hover:bg-muted/40">
                 {[
