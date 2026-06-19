@@ -37,6 +37,7 @@ import {
   CalendarDays,
   ExternalLink,
   HeartPulse,
+  UserRound,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -65,7 +66,8 @@ const NAV_GROUPS = [
   {
     label: "Patients",
     items: [
-      { href: "/admin/submissions", label: "Submissions",  icon: Inbox,       exact: false, minRole: "VIEWER" },
+      { href: "/admin/patients",    label: "Patients",     icon: UserRound,    exact: false, minRole: "VIEWER" },
+      { href: "/admin/submissions", label: "Submissions",  icon: Inbox,        exact: false, minRole: "VIEWER" },
       { href: "/admin/appointments",label: "Appointments", icon: CalendarDays, exact: false, minRole: "VIEWER" },
     ],
   },

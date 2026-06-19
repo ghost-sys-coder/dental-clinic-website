@@ -10,6 +10,7 @@ import {
   teamMembers,
   assignments,
   availabilityBlocks,
+  patients,
 } from "@/db/schema";
 import { requireUser, requireRole, type Role } from "@/lib/auth";
 import { supabaseAdmin } from "@/utils/supabase/admin";
@@ -27,6 +28,7 @@ import {
   lt,
   gt,
   notInArray,
+  sql,
   type SQL,
 } from "drizzle-orm";
 import { notifyDoctorAssignment, sendStaffCredentials } from "@/lib/email";
@@ -115,6 +117,87 @@ export async function listSubmissions({
       .limit(PAGE_SIZE)
       .offset(offset),
     db.select({ total: count() }).from(submissions).where(where),
+  ]);
+
+  return { rows, total, page, pageSize: PAGE_SIZE };
+}
+
+// ── Patients list ─────────────────────────────────────────────────────────────
+
+type PatientStatus = "NEW" | "ACTIVE" | "INACTIVE" | "ARCHIVED";
+
+export async function listPatients({
+  status,
+  query,
+  page = 1,
+}: {
+  status?: PatientStatus;
+  query?: string;
+  page?: number;
+}) {
+  await requireUser();
+
+  const PAGE_SIZE = 20;
+  const offset = (page - 1) * PAGE_SIZE;
+
+  const filters: SQL[] = [];
+  if (status) filters.push(eq(patients.status, status));
+  if (query) {
+    filters.push(
+      or(
+        ilike(patients.fullName, `%${query}%`),
+        ilike(patients.email, `%${query}%`),
+        ilike(patients.phone, `%${query}%`)
+      )!
+    );
+  }
+
+  const where = filters.length > 0 ? and(...filters) : undefined;
+
+  const lastVisitSq = sql<string | null>`(
+    SELECT MAX(a.scheduled_at)
+    FROM assignments a
+    JOIN submissions s ON a.submission_id = s.id
+    WHERE s.patient_id = ${patients.id}
+      AND a.appt_status = 'COMPLETED'
+  )`;
+
+  const nextVisitSq = sql<string | null>`(
+    SELECT MIN(a.scheduled_at)
+    FROM assignments a
+    JOIN submissions s ON a.submission_id = s.id
+    WHERE s.patient_id = ${patients.id}
+      AND a.appt_status IN ('REQUESTED', 'CONFIRMED', 'CHECKED_IN', 'IN_TREATMENT')
+      AND a.scheduled_at > NOW()
+  )`;
+
+  const [rows, [{ total }]] = await Promise.all([
+    db
+      .select({
+        id: patients.id,
+        fullName: patients.fullName,
+        email: patients.email,
+        phone: patients.phone,
+        dateOfBirth: patients.dateOfBirth,
+        gender: patients.gender,
+        address: patients.address,
+        emergencyContact: patients.emergencyContact,
+        medicalAlerts: patients.medicalAlerts,
+        allergies: patients.allergies,
+        insuranceProvider: patients.insuranceProvider,
+        status: patients.status,
+        createdAt: patients.createdAt,
+        preferredDoctorName: teamMembers.name,
+        lastVisit: lastVisitSq,
+        nextVisit: nextVisitSq,
+      })
+      .from(patients)
+      .leftJoin(teamMembers, eq(patients.preferredDoctorId, teamMembers.id))
+      .where(where)
+      .orderBy(desc(patients.createdAt))
+      .limit(PAGE_SIZE)
+      .offset(offset),
+    db.select({ total: count() }).from(patients).where(where),
   ]);
 
   return { rows, total, page, pageSize: PAGE_SIZE };

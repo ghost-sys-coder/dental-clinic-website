@@ -13,6 +13,7 @@ ALTER TABLE audit_logs          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE team_members        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assignments         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE availability_blocks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE patients            ENABLE ROW LEVEL SECURITY;
 
 -- ── 2. Role helper ────────────────────────────────────────────────────────────
 -- Reads the calling user's role from profiles. SECURITY DEFINER so it bypasses
@@ -144,7 +145,26 @@ CREATE POLICY "avail_blocks_delete" ON availability_blocks
   FOR DELETE TO authenticated
   USING (current_user_role() IN ('ADMIN', 'EDITOR'));
 
--- ── 9. Storage — team-profile bucket ─────────────────────────────────────────
+-- ── 9. patients ──────────────────────────────────────────────────────────────
+-- VIEWERs can read; EDITORs/ADMINs can create and update patient records.
+-- No DELETE policy — patient records are archived (status change), not hard-deleted.
+
+DROP POLICY IF EXISTS "patients_select" ON patients;
+DROP POLICY IF EXISTS "patients_write"  ON patients;
+DROP POLICY IF EXISTS "patients_update" ON patients;
+
+CREATE POLICY "patients_select" ON patients
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "patients_write" ON patients
+  FOR INSERT TO authenticated
+  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
+
+CREATE POLICY "patients_update" ON patients
+  FOR UPDATE TO authenticated
+  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
+
+-- ── 10. Storage — team-profile bucket ────────────────────────────────────────
 -- Authenticated users can upload and delete their own files.
 -- Anyone (including the public website) can read the images.
 

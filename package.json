@@ -9,7 +9,8 @@
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
+    "db:push": "drizzle-kit push && tsx db/apply-rls.ts",
+    "db:rls": "tsx db/apply-rls.ts",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx db/seed.ts"
   },

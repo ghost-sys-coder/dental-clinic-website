@@ -41,6 +41,14 @@ export const appointmentDuration = pgEnum("appointment_duration", [
   "30", "45", "60", "90", "120",
 ]);
 
+export const genderEnum = pgEnum("gender", [
+  "MALE", "FEMALE", "OTHER", "PREFER_NOT_TO_SAY",
+]);
+
+export const patientStatus = pgEnum("patient_status", [
+  "NEW", "ACTIVE", "INACTIVE", "ARCHIVED",
+]);
+
 // ── Tables ────────────────────────────────────────────────────────────────────
 
 export const profiles = pgTable("profiles", {
@@ -63,11 +71,14 @@ export const submissions = pgTable("submissions", {
   preferredTime: text("preferred_time"),
   message: text("message"),
   source: text("source"),
+  // Link to a patient record once the lead is converted
+  patientId: uuid("patient_id").references((): AnyPgColumn => patients.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (t) => [
   index("submissions_status_idx").on(t.status),
   index("submissions_created_at_idx").on(t.createdAt),
+  index("submissions_patient_idx").on(t.patientId),
 ]);
 
 export const notes = pgTable("notes", {
@@ -105,6 +116,31 @@ export const teamMembers = pgTable("team_members", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
+
+export const patients = pgTable("patients", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  fullName: text("full_name").notNull(),
+  email: text("email").notNull(),
+  phone: text("phone").notNull(),
+  dateOfBirth: text("date_of_birth"),
+  gender: genderEnum("gender"),
+  address: text("address"),
+  emergencyContact: text("emergency_contact"),
+  medicalAlerts: text("medical_alerts").array().notNull().default([]),
+  allergies: text("allergies").array().notNull().default([]),
+  insuranceProvider: text("insurance_provider"),
+  preferredDoctorId: uuid("preferred_doctor_id").references(
+    () => teamMembers.id,
+    { onDelete: "set null" }
+  ),
+  status: patientStatus("status").notNull().default("NEW"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+}, (t) => [
+  index("patients_status_idx").on(t.status),
+  index("patients_email_idx").on(t.email),
+  index("patients_preferred_doctor_idx").on(t.preferredDoctorId),
+]);
 
 export const assignments = pgTable("assignments", {
   // ── existing columns ─────────────────────────────────────────────────────
@@ -151,9 +187,15 @@ export const availabilityBlocks = pgTable("availability_blocks", {
 
 // ── Relations ─────────────────────────────────────────────────────────────────
 
-export const submissionsRelations = relations(submissions, ({ many }) => ({
+export const submissionsRelations = relations(submissions, ({ one, many }) => ({
+  patient: one(patients, { fields: [submissions.patientId], references: [patients.id] }),
   notes: many(notes),
   auditLogs: many(auditLogs),
+}));
+
+export const patientsRelations = relations(patients, ({ one, many }) => ({
+  preferredDoctor: one(teamMembers, { fields: [patients.preferredDoctorId], references: [teamMembers.id] }),
+  submissions: many(submissions),
 }));
 
 export const notesRelations = relations(notes, ({ one }) => ({
