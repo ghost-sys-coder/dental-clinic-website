@@ -6,11 +6,18 @@ import InviteForm from "./InviteForm";
 import RoleControl from "./RoleControl";
 import { Users, Download, Bell, ShieldCheck, UserPlus } from "lucide-react";
 import type { Role } from "@/lib/auth";
+import { ROLE_LABEL, hasPermission } from "@/lib/permissions";
 
 const ROLE_BADGE: Record<Role, string> = {
-  ADMIN: "bg-primary/10 text-primary border-primary/20",
-  EDITOR: "bg-blue-50 text-blue-700 border-blue-200",
-  VIEWER: "bg-muted text-muted-foreground border-border",
+  OWNER:              "bg-rose-50 text-rose-700 border-rose-200",
+  ADMIN:              "bg-primary/10 text-primary border-primary/20",
+  CLINIC_MANAGER:     "bg-amber-50 text-amber-700 border-amber-200",
+  PRACTITIONER:       "bg-blue-50 text-blue-700 border-blue-200",
+  CLINICAL_ASSISTANT: "bg-cyan-50 text-cyan-700 border-cyan-200",
+  RECEPTIONIST:       "bg-violet-50 text-violet-700 border-violet-200",
+  CONTENT_EDITOR:     "bg-emerald-50 text-emerald-700 border-emerald-200",
+  EDITOR:             "bg-blue-50 text-blue-700 border-blue-200",
+  VIEWER:             "bg-muted text-muted-foreground border-border",
 };
 
 export default async function SettingsPage() {
@@ -20,10 +27,11 @@ export default async function SettingsPage() {
     listStaff(),
   ]);
 
-  // Viewers have no business here
-  if (userRole === "VIEWER") redirect("/admin");
+  if (!hasPermission(userRole, "settings.view")) redirect("/admin");
 
-  const isAdmin = userRole === "ADMIN";
+  const canManageStaff = hasPermission(userRole, "staff.manage_roles");
+  const canInviteStaff = hasPermission(userRole, "staff.create");
+  const canExport      = hasPermission(userRole, "lead.export");
 
   return (
     <div className="flex flex-col gap-4 max-w-2xl">
@@ -95,15 +103,16 @@ export default async function SettingsPage() {
                   <p className="text-xs text-muted-foreground truncate">{s.email}</p>
                 </div>
 
-                {isAdmin ? (
+                {canManageStaff ? (
                   <RoleControl
                     profileId={s.id}
                     currentRole={s.role as Role}
+                    actorRole={userRole}
                     isSelf={s.id === user.id}
                   />
                 ) : (
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${ROLE_BADGE[s.role as Role]}`}>
-                    {s.role}
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${ROLE_BADGE[s.role as Role] ?? ROLE_BADGE.VIEWER}`}>
+                    {ROLE_LABEL[s.role as Role] ?? s.role}
                   </span>
                 )}
               </li>
@@ -111,33 +120,35 @@ export default async function SettingsPage() {
           </ul>
         )}
 
-        {/* Invite section — admin only */}
-        {isAdmin && (
+        {/* Invite section */}
+        {canInviteStaff && (
           <div className="px-4 py-3 border-t border-border bg-muted/20">
             <div className="flex items-center gap-2 mb-3">
               <UserPlus className="size-3.5 text-muted-foreground" />
               <p className="text-xs font-semibold text-foreground">Invite a team member</p>
             </div>
-            <InviteForm />
+            <InviteForm actorRole={userRole} />
           </div>
         )}
       </div>
 
       {/* Export */}
-      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border bg-muted/30 flex items-center gap-2">
-          <div className="size-6 rounded-md bg-green-100 flex items-center justify-center">
-            <Download className="size-3.5 text-green-600" />
+      {canExport && (
+        <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-border bg-muted/30 flex items-center gap-2">
+            <div className="size-6 rounded-md bg-green-100 flex items-center justify-center">
+              <Download className="size-3.5 text-green-600" />
+            </div>
+            <h2 className="text-xs font-semibold text-foreground">Export Data</h2>
           </div>
-          <h2 className="text-xs font-semibold text-foreground">Export Data</h2>
+          <div className="px-4 py-3 flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              Download all submissions as a CSV file. Export events are logged in the audit trail.
+            </p>
+            <ExportButton />
+          </div>
         </div>
-        <div className="px-4 py-3 flex flex-col gap-3">
-          <p className="text-sm text-muted-foreground">
-            Download all submissions as a CSV file. Export events are logged in the audit trail.
-          </p>
-          <ExportButton />
-        </div>
-      </div>
+      )}
     </div>
   );
 }

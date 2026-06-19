@@ -4,6 +4,12 @@ import { useState, useTransition } from "react";
 import { inviteUser } from "../actions";
 import type { Role } from "@/lib/auth";
 import {
+  ROLE_LABEL,
+  ROLE_DESCRIPTION,
+  ASSIGNABLE_ROLES,
+  canAssignRole,
+} from "@/lib/permissions";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -13,12 +19,18 @@ import {
 import { Loader2, UserPlus, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 
-export default function InviteForm() {
+interface Props {
+  actorRole: Role;
+}
+
+export default function InviteForm({ actorRole }: Props) {
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw]     = useState(false);
   const [role, setRole]         = useState<Role>("VIEWER");
   const [pending, startTransition] = useTransition();
+
+  const availableRoles = ASSIGNABLE_ROLES.filter((r) => canAssignRole(actorRole, r));
 
   const passwordError = password.length > 0 && password.length < 8
     ? "Password must be at least 8 characters"
@@ -104,11 +116,16 @@ export default function InviteForm() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ADMIN">Admin</SelectItem>
-            <SelectItem value="EDITOR">Editor</SelectItem>
-            <SelectItem value="VIEWER">Viewer</SelectItem>
+            {availableRoles.map((r) => (
+              <SelectItem key={r} value={r}>
+                {ROLE_LABEL[r]}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
+        <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+          {ROLE_DESCRIPTION[role]}
+        </p>
       </div>
 
       <button

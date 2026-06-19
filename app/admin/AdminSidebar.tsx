@@ -4,7 +4,8 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/login/actions";
-import type { Role } from "@/lib/auth";
+import type { Role, Permission } from "@/lib/auth";
+import { hasAnyPermission, ROLE_LABEL } from "@/lib/permissions";
 import {
   Sidebar,
   SidebarContent,
@@ -41,48 +42,63 @@ import {
   Stethoscope,
 } from "lucide-react";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-const ROLE_LABEL: Record<Role, string> = {
-  ADMIN:  "Admin",
-  EDITOR: "Editor",
-  VIEWER: "Viewer",
-};
+// ── Role badges ──────────────────────────────────────────────────────────────
 
 const ROLE_BADGE: Record<Role, string> = {
-  ADMIN:  "bg-primary/15 text-primary border border-primary/20",
-  EDITOR: "bg-blue-50 text-blue-700 border border-blue-200",
-  VIEWER: "bg-muted text-muted-foreground border border-border",
+  OWNER:              "bg-rose-50 text-rose-700 border border-rose-200",
+  ADMIN:              "bg-primary/15 text-primary border border-primary/20",
+  CLINIC_MANAGER:     "bg-amber-50 text-amber-700 border border-amber-200",
+  PRACTITIONER:       "bg-blue-50 text-blue-700 border border-blue-200",
+  CLINICAL_ASSISTANT: "bg-cyan-50 text-cyan-700 border border-cyan-200",
+  RECEPTIONIST:       "bg-violet-50 text-violet-700 border border-violet-200",
+  CONTENT_EDITOR:     "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  EDITOR:             "bg-blue-50 text-blue-700 border border-blue-200",
+  VIEWER:             "bg-muted text-muted-foreground border border-border",
 };
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
-const NAV_GROUPS = [
+// Each nav item declares the permissions that grant access. A user sees the
+// link if they have ANY of the listed permissions.
+type NavItem = {
+  href:        string;
+  label:       string;
+  icon:        typeof LayoutDashboard;
+  exact:       boolean;
+  permissions: Permission[];
+};
+
+const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Overview",
     items: [
-      { href: "/admin",             label: "Dashboard",    icon: LayoutDashboard, exact: true,  minRole: "VIEWER" },
+      { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true,
+        permissions: ["analytics.view_basic", "analytics.view_full", "lead.view_all", "lead.view_assigned", "appointment.view_all", "appointment.view_assigned"] },
     ],
   },
   {
     label: "Patients",
     items: [
-      { href: "/admin/patients",    label: "Patients",     icon: UserRound,    exact: false, minRole: "VIEWER" },
-      { href: "/admin/submissions", label: "Submissions",  icon: Inbox,        exact: false, minRole: "VIEWER" },
-      { href: "/admin/appointments",label: "Appointments", icon: CalendarDays, exact: false, minRole: "VIEWER" },
+      { href: "/admin/patients",    label: "Patients",     icon: UserRound,    exact: false,
+        permissions: ["patient.view_all", "patient.view_assigned"] },
+      { href: "/admin/submissions", label: "Submissions",  icon: Inbox,        exact: false,
+        permissions: ["lead.view_all", "lead.view_assigned"] },
+      { href: "/admin/appointments",label: "Appointments", icon: CalendarDays, exact: false,
+        permissions: ["appointment.view_all", "appointment.view_assigned"] },
     ],
   },
   {
     label: "Management",
     items: [
-      { href: "/admin/team",        label: "Team",         icon: Users,        exact: false, minRole: "VIEWER" },
-      { href: "/admin/services",    label: "Services",     icon: Stethoscope,  exact: false, minRole: "VIEWER" },
-      { href: "/admin/settings",    label: "Settings",     icon: Settings,     exact: false, minRole: "EDITOR" },
+      { href: "/admin/team",     label: "Team",     icon: Users,       exact: false,
+        permissions: ["staff.view", "content.view"] },
+      { href: "/admin/services", label: "Services", icon: Stethoscope, exact: false,
+        permissions: ["content.view"] },
+      { href: "/admin/settings", label: "Settings", icon: Settings,    exact: false,
+        permissions: ["settings.view"] },
     ],
   },
-] as const;
-
-const HIERARCHY: Record<Role, number> = { VIEWER: 0, EDITOR: 1, ADMIN: 2 };
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -135,8 +151,8 @@ export default function AdminSidebar({
         {/* ── Nav ── */}
         <SidebarContent className="py-2">
           {NAV_GROUPS.map((group, gi) => {
-            const visibleItems = group.items.filter(
-              (item) => HIERARCHY[userRole] >= HIERARCHY[item.minRole as Role]
+            const visibleItems = group.items.filter((item) =>
+              hasAnyPermission(userRole, item.permissions)
             );
             if (visibleItems.length === 0) return null;
             return (

@@ -26,7 +26,17 @@ export const submissionStatus = pgEnum("submission_status", [
   "LOST",
   "ARCHIVED",
 ]);
-export const roleEnum = pgEnum("role", ["ADMIN", "EDITOR", "VIEWER"]);
+export const roleEnum = pgEnum("role", [
+  "ADMIN",
+  "EDITOR",            // legacy — treated as CLINIC_MANAGER for permissions
+  "VIEWER",
+  "OWNER",
+  "CLINIC_MANAGER",
+  "PRACTITIONER",
+  "CLINICAL_ASSISTANT",
+  "RECEPTIONIST",
+  "CONTENT_EDITOR",
+]);
 
 export const appointmentStatus = pgEnum("appointment_status", [
   "REQUESTED",

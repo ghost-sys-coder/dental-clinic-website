@@ -14,7 +14,7 @@ import {
   services,
   serviceDoctors,
 } from "@/db/schema";
-import { requireUser, requireRole, type Role } from "@/lib/auth";
+import { requireUser, requirePermission, type Role } from "@/lib/auth";
 import { supabaseAdmin } from "@/utils/supabase/admin";
 import {
   eq,
@@ -250,7 +250,7 @@ export async function createPatient(data: {
   preferredDoctorId?: string | null;
   status?: PatientStatus;
 }) {
-  await requireRole("EDITOR");
+  await requirePermission("patient.create");
 
   const [row] = await db.insert(patients).values({
     fullName:          data.fullName,
@@ -288,7 +288,7 @@ export async function updatePatient(
     status?: PatientStatus;
   }
 ) {
-  await requireRole("EDITOR");
+  await requirePermission("patient.update_basic");
 
   await db.update(patients).set(data).where(eq(patients.id, id));
 
@@ -330,7 +330,7 @@ export async function getSubmission(id: string) {
 // ── Status update ─────────────────────────────────────────────────────────────
 
 export async function updateSubmissionStatus(id: string, status: SubmissionStatus) {
-  const { user } = await requireRole("EDITOR");
+  const { user } = await requirePermission("lead.update");
 
   const [existing] = await db
     .select({ status: submissions.status })
@@ -353,7 +353,7 @@ export async function updateSubmissionStatus(id: string, status: SubmissionStatu
 // ── Notes ────────────────────────────────────────────────────────────────────
 
 export async function addNote(submissionId: string, body: string) {
-  const { user } = await requireRole("EDITOR");
+  const { user } = await requirePermission("note.create");
 
   if (!body.trim()) throw new Error("Note body cannot be empty");
 
@@ -375,7 +375,7 @@ export async function addNote(submissionId: string, body: string) {
 // ── CSV export ────────────────────────────────────────────────────────────────
 
 export async function exportSubmissionsCsv(status?: SubmissionStatus) {
-  const { user } = await requireRole("EDITOR");
+  const { user } = await requirePermission("lead.export");
 
   const where = status ? eq(submissions.status, status) : undefined;
   const rows = await db
@@ -422,10 +422,16 @@ export async function inviteUser(
   password: string,
   role: Role,
 ): Promise<{ error: string | null }> {
+  let actorRole: Role;
   try {
-    await requireRole("ADMIN");
+    ({ role: actorRole } = await requirePermission("staff.create"));
   } catch {
     return { error: "You don't have permission to invite users." };
+  }
+
+  // Only Owner may grant the Owner role.
+  if (role === "OWNER" && actorRole !== "OWNER") {
+    return { error: "Only the Owner may grant the Owner role." };
   }
 
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
@@ -453,16 +459,40 @@ export async function inviteUser(
 }
 
 export async function updateUserRole(profileId: string, newRole: Role) {
-  const { user } = await requireRole("ADMIN");
+  const { user, role: actorRole } = await requirePermission("staff.manage_roles");
   if (profileId === user.id) throw new Error("You cannot change your own role.");
+
+  // Look up the target's current role to guard ownership transitions.
+  const [target] = await db
+    .select({ role: profiles.role })
+    .from(profiles)
+    .where(eq(profiles.id, profileId))
+    .limit(1);
+
+  if (target?.role === "OWNER" && actorRole !== "OWNER") {
+    throw new Error("Only the Owner can change the Owner role.");
+  }
+  if (newRole === "OWNER" && actorRole !== "OWNER") {
+    throw new Error("Only the Owner can grant the Owner role.");
+  }
 
   await db.update(profiles).set({ role: newRole }).where(eq(profiles.id, profileId));
   revalidatePath("/admin/settings");
 }
 
 export async function revokeUser(profileId: string) {
-  const { user } = await requireRole("ADMIN");
+  const { user, role: actorRole } = await requirePermission("staff.archive");
   if (profileId === user.id) throw new Error("You cannot revoke your own account.");
+
+  const [target] = await db
+    .select({ role: profiles.role })
+    .from(profiles)
+    .where(eq(profiles.id, profileId))
+    .limit(1);
+
+  if (target?.role === "OWNER" && actorRole !== "OWNER") {
+    throw new Error("Only the Owner can remove the Owner account.");
+  }
 
   await supabaseAdmin.auth.admin.deleteUser(profileId);
   await db.delete(profiles).where(eq(profiles.id, profileId));
@@ -498,7 +528,7 @@ export async function createTeamMember(data: {
   email?: string;
   displayOrder?: number;
 }) {
-  await requireRole("EDITOR");
+  await requirePermission("content.create");
 
   const slug = data.name
     .toLowerCase()
@@ -532,7 +562,7 @@ export async function updateTeamMember(
     displayOrder?: number;
   }
 ) {
-  await requireRole("EDITOR");
+  await requirePermission("content.update");
 
   const slug = data.name
     .toLowerCase()
@@ -558,7 +588,7 @@ export async function updateTeamMember(
 }
 
 export async function deleteTeamMember(id: string) {
-  await requireRole("EDITOR");
+  await requirePermission("content.archive");
   await db.delete(teamMembers).where(eq(teamMembers.id, id));
   revalidatePath("/admin/team");
   revalidatePath("/");
@@ -636,9 +666,9 @@ export async function assignSubmission(
     roomOrChair?: string;
   },
 ): Promise<{ error: null } | { error: string; blockConflict?: { startsAt: string; endsAt: string; reason: string | null } }> {
-  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  let user: Awaited<ReturnType<typeof requirePermission>>["user"];
   try {
-    ({ user } = await requireRole("EDITOR"));
+    ({ user } = await requirePermission("lead.assign"));
   } catch {
     return { error: "You don't have permission to assign submissions." };
   }
@@ -836,9 +866,9 @@ export async function updateAppointmentStatus(
   status: AppointmentStatus,
   opts?: { cancellationReason?: string },
 ): Promise<{ error: string | null }> {
-  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  let user: Awaited<ReturnType<typeof requirePermission>>["user"];
   try {
-    ({ user } = await requireRole("EDITOR"));
+    ({ user } = await requirePermission("appointment.update"));
   } catch {
     return { error: "You don't have permission to update appointments." };
   }
@@ -898,9 +928,9 @@ export async function rescheduleAppointment(
     roomOrChair?: string;
   },
 ): Promise<{ error: null; newId: string } | { error: string; blockConflict?: { startsAt: string; endsAt: string; reason: string | null } }> {
-  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  let user: Awaited<ReturnType<typeof requirePermission>>["user"];
   try {
-    ({ user } = await requireRole("EDITOR"));
+    ({ user } = await requirePermission("appointment.reschedule"));
   } catch {
     return { error: "You don't have permission to reschedule appointments." };
   }
@@ -1041,7 +1071,7 @@ export async function updateAppointmentDetails(
   },
 ): Promise<{ error: string | null }> {
   try {
-    await requireRole("EDITOR");
+    await requirePermission("appointment.update");
   } catch {
     return { error: "You don't have permission to update appointments." };
   }
@@ -1153,9 +1183,9 @@ export async function createAvailabilityBlock(
   endsAt: Date,
   reason?: string,
 ): Promise<{ error: string | null }> {
-  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  let user: Awaited<ReturnType<typeof requirePermission>>["user"];
   try {
-    ({ user } = await requireRole("EDITOR"));
+    ({ user } = await requirePermission("appointment.manage_availability"));
   } catch {
     return { error: "You don't have permission to manage availability." };
   }
@@ -1178,7 +1208,7 @@ export async function createAvailabilityBlock(
 
 export async function deleteAvailabilityBlock(id: string): Promise<{ error: string | null }> {
   try {
-    await requireRole("EDITOR");
+    await requirePermission("appointment.manage_availability");
   } catch {
     return { error: "You don't have permission to manage availability." };
   }
@@ -1245,7 +1275,7 @@ export async function createService(data: {
   isActive?: boolean;
   doctorIds?: string[];
 }) {
-  await requireRole("EDITOR");
+  await requirePermission("content.create");
 
   const [row] = await db
     .insert(services)
@@ -1286,7 +1316,7 @@ export async function updateService(
     doctorIds?: string[];
   }
 ) {
-  await requireRole("EDITOR");
+  await requirePermission("content.update");
 
   const { doctorIds, ...fields } = data;
 
@@ -1309,7 +1339,7 @@ export async function updateService(
 }
 
 export async function deleteService(id: string) {
-  await requireRole("EDITOR");
+  await requirePermission("content.archive");
   await db.delete(services).where(eq(services.id, id));
   revalidatePath("/admin/services");
   revalidatePath("/services");
@@ -1343,7 +1373,7 @@ export async function searchPatients(query: string) {
 }
 
 export async function convertSubmissionToPatient(submissionId: string) {
-  const { user } = await requireRole("EDITOR");
+  const { user } = await requirePermission("patient.create");
 
   const [sub] = await db
     .select({
@@ -1387,7 +1417,7 @@ export async function convertSubmissionToPatient(submissionId: string) {
 }
 
 export async function linkSubmissionToPatient(submissionId: string, patientId: string) {
-  const { user } = await requireRole("EDITOR");
+  const { user } = await requirePermission("patient.update_basic");
 
   const [sub] = await db
     .select({ patientId: submissions.patientId })
@@ -1414,7 +1444,7 @@ export async function linkSubmissionToPatient(submissionId: string, patientId: s
 }
 
 export async function unlinkSubmissionFromPatient(submissionId: string) {
-  const { user } = await requireRole("EDITOR");
+  const { user } = await requirePermission("patient.update_basic");
 
   const [sub] = await db
     .select({ patientId: submissions.patientId })

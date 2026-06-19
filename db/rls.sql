@@ -15,10 +15,12 @@ ALTER TABLE assignments         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE availability_blocks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE patients            ENABLE ROW LEVEL SECURITY;
 
--- ── 2. Role helper ────────────────────────────────────────────────────────────
--- Reads the calling user's role from profiles. SECURITY DEFINER so it bypasses
--- RLS on profiles itself (avoids infinite recursion). Called inside every
--- write-guarded policy below.
+-- ── 2. Role helpers ──────────────────────────────────────────────────────────
+-- All read from profiles via SECURITY DEFINER so they bypass RLS on profiles
+-- itself (avoids infinite recursion). Called inside the write-guarded policies
+-- below. Recognized roles:
+--   OWNER, ADMIN, CLINIC_MANAGER, PRACTITIONER, CLINICAL_ASSISTANT,
+--   RECEPTIONIST, CONTENT_EDITOR, VIEWER, EDITOR (legacy = CLINIC_MANAGER).
 
 CREATE OR REPLACE FUNCTION current_user_role()
   RETURNS text
@@ -26,6 +28,38 @@ CREATE OR REPLACE FUNCTION current_user_role()
   SET search_path = public
 AS $$
   SELECT role::text FROM profiles WHERE id = auth.uid()
+$$;
+
+-- True for staff who can manipulate operational data: leads, appointments,
+-- patients, assignments, availability. Practitioners are also included so
+-- they can update notes/progress on their own assignments.
+CREATE OR REPLACE FUNCTION current_user_can_operate()
+  RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = public
+AS $$
+  SELECT current_user_role() IN (
+    'OWNER', 'ADMIN', 'CLINIC_MANAGER', 'RECEPTIONIST',
+    'PRACTITIONER', 'CLINICAL_ASSISTANT', 'EDITOR'
+  )
+$$;
+
+-- True for staff who can edit public-facing content: services, team profiles.
+CREATE OR REPLACE FUNCTION current_user_can_edit_content()
+  RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = public
+AS $$
+  SELECT current_user_role() IN ('OWNER', 'ADMIN', 'CONTENT_EDITOR', 'EDITOR')
+$$;
+
+-- True for senior staff who can manage other staff accounts.
+CREATE OR REPLACE FUNCTION current_user_can_manage_staff()
+  RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = public
+AS $$
+  SELECT current_user_role() IN ('OWNER', 'ADMIN')
 $$;
 
 -- ── 3. profiles ───────────────────────────────────────────────────────────────
@@ -67,11 +101,11 @@ CREATE POLICY "notes_select" ON notes
 
 CREATE POLICY "notes_write" ON notes
   FOR INSERT TO authenticated
-  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
+  WITH CHECK (current_user_can_operate());
 
 CREATE POLICY "notes_delete" ON notes
   FOR DELETE TO authenticated
-  USING (author_id = auth.uid() OR current_user_role() = 'ADMIN');
+  USING (author_id = auth.uid() OR current_user_role() IN ('OWNER', 'ADMIN'));
 
 -- ── 5. audit_logs ─────────────────────────────────────────────────────────────
 -- All staff can read the full audit trail.
@@ -86,17 +120,33 @@ CREATE POLICY "audit_logs_select" ON audit_logs
 
 CREATE POLICY "audit_logs_insert" ON audit_logs
   FOR INSERT TO authenticated
-  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
+  WITH CHECK (current_user_can_operate() OR current_user_can_edit_content());
 
 -- ── 6. team_members ───────────────────────────────────────────────────────────
--- Authenticated staff can manage members.
+-- Authenticated staff can read; only content-capable roles can edit.
 -- Anon role gets SELECT so the public website can read them.
 
-DROP POLICY IF EXISTS "team_members_staff_all"     ON team_members;
-DROP POLICY IF EXISTS "team_members_public_select"  ON team_members;
+DROP POLICY IF EXISTS "team_members_staff_all"    ON team_members;
+DROP POLICY IF EXISTS "team_members_select"       ON team_members;
+DROP POLICY IF EXISTS "team_members_write"        ON team_members;
+DROP POLICY IF EXISTS "team_members_update"       ON team_members;
+DROP POLICY IF EXISTS "team_members_delete"       ON team_members;
+DROP POLICY IF EXISTS "team_members_public_select" ON team_members;
 
-CREATE POLICY "team_members_staff_all" ON team_members
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "team_members_select" ON team_members
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "team_members_write" ON team_members
+  FOR INSERT TO authenticated
+  WITH CHECK (current_user_can_edit_content());
+
+CREATE POLICY "team_members_update" ON team_members
+  FOR UPDATE TO authenticated
+  USING (current_user_can_edit_content());
+
+CREATE POLICY "team_members_delete" ON team_members
+  FOR DELETE TO authenticated
+  USING (current_user_can_edit_content());
 
 CREATE POLICY "team_members_public_select" ON team_members
   FOR SELECT TO anon USING (true);
@@ -115,11 +165,11 @@ CREATE POLICY "assignments_select" ON assignments
 
 CREATE POLICY "assignments_write" ON assignments
   FOR INSERT TO authenticated
-  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
+  WITH CHECK (current_user_can_operate());
 
 CREATE POLICY "assignments_update" ON assignments
   FOR UPDATE TO authenticated
-  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
+  USING (current_user_can_operate());
 
 -- ── 8. availability_blocks ───────────────────────────────────────────────────
 -- VIEWERs can read; EDITORs/ADMINs can add, edit, and remove blocks.
@@ -135,15 +185,15 @@ CREATE POLICY "avail_blocks_select" ON availability_blocks
 
 CREATE POLICY "avail_blocks_write" ON availability_blocks
   FOR INSERT TO authenticated
-  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
+  WITH CHECK (current_user_can_operate());
 
 CREATE POLICY "avail_blocks_update" ON availability_blocks
   FOR UPDATE TO authenticated
-  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
+  USING (current_user_can_operate());
 
 CREATE POLICY "avail_blocks_delete" ON availability_blocks
   FOR DELETE TO authenticated
-  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
+  USING (current_user_can_operate());
 
 -- ── 9. patients ──────────────────────────────────────────────────────────────
 -- VIEWERs can read; EDITORs/ADMINs can create and update patient records.
@@ -158,11 +208,15 @@ CREATE POLICY "patients_select" ON patients
 
 CREATE POLICY "patients_write" ON patients
   FOR INSERT TO authenticated
-  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
+  WITH CHECK (current_user_can_operate());
 
 CREATE POLICY "patients_update" ON patients
   FOR UPDATE TO authenticated
-  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
+  USING (current_user_can_operate());
+
+CREATE POLICY "patients_delete" ON patients
+  FOR DELETE TO authenticated
+  USING (current_user_role() = 'OWNER');
 
 -- ── 10. Storage — team-profile bucket ────────────────────────────────────────
 -- Authenticated users can upload and delete their own files.
@@ -212,15 +266,15 @@ CREATE POLICY "services_public_select" ON services
 
 CREATE POLICY "services_write" ON services
   FOR INSERT TO authenticated
-  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
+  WITH CHECK (current_user_can_edit_content());
 
 CREATE POLICY "services_update" ON services
   FOR UPDATE TO authenticated
-  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
+  USING (current_user_can_edit_content());
 
 CREATE POLICY "services_delete" ON services
   FOR DELETE TO authenticated
-  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
+  USING (current_user_can_edit_content());
 
 -- ── 13. service_doctors ──────────────────────────────────────────────────────
 
@@ -236,11 +290,11 @@ CREATE POLICY "service_doctors_public_select" ON service_doctors
 
 CREATE POLICY "service_doctors_write" ON service_doctors
   FOR INSERT TO authenticated
-  WITH CHECK (current_user_role() IN ('ADMIN', 'EDITOR'));
+  WITH CHECK (current_user_can_edit_content());
 
 CREATE POLICY "service_doctors_delete" ON service_doctors
   FOR DELETE TO authenticated
-  USING (current_user_role() IN ('ADMIN', 'EDITOR'));
+  USING (current_user_can_edit_content());
 
 -- ── 14. Storage — clinic-services bucket ─────────────────────────────────────
 

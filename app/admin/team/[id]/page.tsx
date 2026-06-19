@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { getTeamMember, getDoctorUpcomingAssignments, listAvailabilityBlocks } from "@/app/admin/actions";
 import { getSessionRole } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 import AvailabilityBlockPanel from "./AvailabilityBlockPanel";
 
 export async function generateMetadata({
@@ -64,7 +65,8 @@ export default async function DoctorProfilePage({
 
   if (!member) notFound();
 
-  const canWrite = userRole !== "VIEWER";
+  const canWrite = hasPermission(userRole, "content.update");
+  const canManageAvailability = hasPermission(userRole, "appointment.manage_availability");
 
   return (
     <div className="flex flex-col gap-5 max-w-4xl">
@@ -247,7 +249,7 @@ export default async function DoctorProfilePage({
           endsAt: b.endsAt.toISOString(),
           reason: b.reason,
         }))}
-        canWrite={canWrite}
+        canWrite={canManageAvailability}
       />
     </div>
   );

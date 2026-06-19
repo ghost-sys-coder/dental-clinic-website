@@ -3,12 +3,15 @@ import Image from "next/image";
 import { Plus, User, Trash2, Pencil, Eye } from "lucide-react";
 import { listTeamMembers, deleteTeamMember } from "@/app/admin/actions";
 import { getSessionRole } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 
 export const metadata = { title: "Team — Admin" };
 
 export default async function TeamPage() {
   const [members, userRole] = await Promise.all([listTeamMembers(), getSessionRole()]);
-  const canWrite = userRole !== "VIEWER";
+  const canCreate = hasPermission(userRole, "content.create");
+  const canUpdate = hasPermission(userRole, "content.update");
+  const canDelete = hasPermission(userRole, "content.archive");
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -20,7 +23,7 @@ export default async function TeamPage() {
             Profiles shown on the public-facing team section.
           </p>
         </div>
-        {canWrite && (
+        {canCreate && (
           <Link
             href="/admin/team/new"
             className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
@@ -85,29 +88,33 @@ export default async function TeamPage() {
                   <Eye className="size-3.5" />
                   View
                 </Link>
-                {canWrite && (
+                {(canUpdate || canDelete) && (
                   <div className="flex items-center gap-2">
-                    <Link
-                      href={`/admin/team/${member.id}/edit`}
-                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
-                    >
-                      <Pencil className="size-3.5" />
-                      Edit
-                    </Link>
-                    <form
-                      action={async () => {
-                        "use server";
-                        await deleteTeamMember(member.id);
-                      }}
-                    >
-                      <button
-                        type="submit"
-                        className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                    {canUpdate && (
+                      <Link
+                        href={`/admin/team/${member.id}/edit`}
+                        className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
                       >
-                        <Trash2 className="size-3.5" />
-                        Delete
-                      </button>
-                    </form>
+                        <Pencil className="size-3.5" />
+                        Edit
+                      </Link>
+                    )}
+                    {canDelete && (
+                      <form
+                        action={async () => {
+                          "use server";
+                          await deleteTeamMember(member.id);
+                        }}
+                      >
+                        <button
+                          type="submit"
+                          className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                        >
+                          <Trash2 className="size-3.5" />
+                          Delete
+                        </button>
+                      </form>
+                    )}
                   </div>
                 )}
               </div>
